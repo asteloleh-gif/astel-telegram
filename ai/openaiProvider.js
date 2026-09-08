@@ -18,6 +18,24 @@ function extractResponseText(data) {
   return parts.join("\n").trim();
 }
 
+function extractResponseSources(data) {
+  const urls = [];
+  const add = value => {
+    if (typeof value === "string" && /^https?:\/\//i.test(value) && !urls.includes(value)) urls.push(value);
+  };
+
+  for (const item of data?.output || []) {
+    for (const source of item?.action?.sources || []) add(source?.url || source);
+    for (const content of item?.content || []) {
+      for (const annotation of content?.annotations || []) {
+        add(annotation?.url);
+        add(annotation?.url_citation?.url);
+      }
+    }
+  }
+  return urls;
+}
+
 function createOpenAIProvider({
   apiKey = process.env.OPENAI_API_KEY,
   model = "gpt-5.6-terra",
@@ -26,23 +44,28 @@ function createOpenAIProvider({
   maxOutputTokens = 1600,
   fetchImpl = globalThis.fetch,
 } = {}) {
-  async function generate({ instructions, input }) {
+  async function generate({ instructions, input, tools = null, include = null, maxToolCalls = null }) {
     if (!apiKey) throw new AIProviderError("OPENAI_API_KEY missing", { code: "AI_NOT_CONFIGURED" });
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     let response;
     try {
+      const body = {
+        model,
+        instructions,
+        input,
+        reasoning: { effort: reasoningEffort },
+        max_output_tokens: maxOutputTokens,
+      };
+      if (Array.isArray(tools) && tools.length) body.tools = tools;
+      if (Array.isArray(include) && include.length) body.include = include;
+      if (Number.isInteger(maxToolCalls) && maxToolCalls > 0) body.max_tool_calls = maxToolCalls;
+
       response = await fetchImpl("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model,
-          instructions,
-          input,
-          reasoning: { effort: reasoningEffort },
-          max_output_tokens: maxOutputTokens,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
     } catch (err) {
@@ -65,6 +88,7 @@ function createOpenAIProvider({
 
     return {
       text,
+      sources: extractResponseSources(data),
       model: data?.model || model,
       responseId: data?.id || null,
       usage: data?.usage || null,
@@ -74,4 +98,4 @@ function createOpenAIProvider({
   return { generate };
 }
 
-module.exports = { createOpenAIProvider, AIProviderError, extractResponseText };
+module.exports = { createOpenAIProvider, AIProviderError, extractResponseText, extractResponseSources };
