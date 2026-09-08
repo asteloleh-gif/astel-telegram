@@ -18,7 +18,8 @@ function createSystemSkill({ policy, conversationStore, redisClient } = {}) {
       return {
         text: [
           "Astel Assistant ✅",
-          `AI: ${policy.openaiModel}`,
+          `Chat AI: ${policy.openaiChatModel} (${policy.openaiChatReasoningEffort})`,
+          `Power AI: ${policy.openaiPowerModel} (${policy.openaiPowerReasoningEffort})`,
           `Redis: ${redisStatus}`,
           `Memory: ${memory.length} messages`,
           `Mode: ${policy.botDryRun ? "DRY_RUN" : (policy.botEnabled ? "LIVE" : "DISABLED")}`,
@@ -30,8 +31,9 @@ function createSystemSkill({ policy, conversationStore, redisClient } = {}) {
     return {
       text: [
         "Astel Assistant готов.",
-        "Пиши обычным сообщением — отвечу через AI.",
+        `Обычный чат → ${policy.openaiChatModel} (экономный режим).`,
         "",
+        "/think <задача> — усиленный AI",
         "/research <запрос> — свежий веб-ресерч",
         "/leads <что искать> — публичные B2B лиды",
         "/status — статус",
