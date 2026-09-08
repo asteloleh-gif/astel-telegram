@@ -120,6 +120,32 @@ function createTelegramResearchClient(config) {
     };
   }
 
+  async function listDialogs({ limit = 120 } = {}) {
+    const state = await connect();
+    if (!state.authorized) throw new Error(state.reason || "TELEGRAM_NOT_AUTHORIZED");
+    const finalLimit = Math.max(1, Math.min(250, Number(limit) || 120));
+    const dialogs = await client.getDialogs({ limit: finalLimit });
+    const items = [];
+
+    for (const dialog of dialogs || []) {
+      const entity = dialog?.entity || dialog;
+      const type = detectEntityType(entity);
+      if (!['group', 'channel'].includes(type)) continue;
+      const username = entity?.username || null;
+      const title = dialog?.title || entity?.title || entity?.username || 'Telegram';
+      items.push({
+        title,
+        username,
+        source: username ? `@${username}` : null,
+        type,
+        public: Boolean(username),
+      });
+    }
+
+    items.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+    return { count: items.length, dialogs: items };
+  }
+
   async function search({ query, sources, periodHours = 168, limit = 20 }) {
     if (!query || !String(query).trim()) throw new Error("SEARCH_QUERY_REQUIRED");
     const state = await connect();
@@ -179,7 +205,7 @@ function createTelegramResearchClient(config) {
     account = null;
   }
 
-  return { connect, status, inspectSource, search, disconnect, isConfigured };
+  return { connect, status, inspectSource, listDialogs, search, disconnect, isConfigured };
 }
 
 module.exports = { createTelegramResearchClient, normalizeMessage, toIsoDate, detectEntityType };
