@@ -24,7 +24,7 @@ function createAssistantPipeline({ skillRegistry, publisher, conversationStore, 
       return { action: "STOP", reasonCode };
     }
 
-    const published = await publisher.publish(event, candidate.text);
+    const published = await publisher.publish(event, candidate);
     if (published.published && candidate.rememberAssistant) {
       await conversationStore.append(event, {
         role: "assistant",
