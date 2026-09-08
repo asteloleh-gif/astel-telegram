@@ -18,13 +18,13 @@ const modules = [
   { id: 'research', title: 'Research', description: 'Search, analyze and get insights', icon: 'search', bg: '#dcf7e9', fg: '#12a66c' },
   { id: 'think', title: 'Think', description: 'Reason, plan and solve complex tasks', icon: 'brain', bg: '#fff0df', fg: '#f28d24' },
   { id: 'status', title: 'Status', description: 'Track progress and activity', icon: 'chart', bg: '#eae8ff', fg: '#6553e6' },
-  { id: 'settings', title: 'Settings', description: 'Customize your assistant', icon: 'gear', bg: '#e9eef5', fg: '#57708f' },
+  { id: 'settings', title: 'Settings', description: 'Connect Telegram Research and configure Astel', icon: 'gear', bg: '#e9eef5', fg: '#57708f' },
 ];
 
 const quickActions = [
+  { id: 'telegram-setup', title: 'Connect Telegram Research', subtitle: 'Authorize the read-only research account' },
   { id: 'find-lead', title: 'Find a lead', subtitle: 'Start a new lead search' },
   { id: 'research-now', title: 'Research something', subtitle: 'Open a fresh research task' },
-  { id: 'open-status', title: 'Check Astel status', subtitle: 'View system health and models' },
 ];
 
 function moduleCard(item) {
@@ -110,10 +110,201 @@ function showSheet(title, text) {
   tg?.HapticFeedback?.impactOccurred?.('light');
 }
 
+function setupHeaders() {
+  return {
+    accept: 'application/json',
+    'content-type': 'application/json',
+    'x-telegram-init-data': tg?.initData || '',
+  };
+}
+
+async function setupApi(path, { method = 'GET', body } = {}) {
+  if (!tg?.initData) throw new Error('Open Astel from the Telegram bot to authorize this setup.');
+  const response = await fetch(`/api/telegram-research/setup/${path}`, {
+    method,
+    headers: setupHeaders(),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error || `Setup failed (${response.status})`);
+  return payload;
+}
+
+function setupMessage(text, type = '') {
+  const node = document.querySelector('#setup-message');
+  if (!node) return;
+  node.className = `setup-message ${type}`.trim();
+  node.textContent = text || '';
+}
+
+function setSetupBusy(busy) {
+  document.querySelectorAll('.setup-card button, .setup-card input').forEach((node) => {
+    node.disabled = Boolean(busy);
+  });
+}
+
+function showSetupStep(step) {
+  document.querySelectorAll('[data-setup-step]').forEach((node) => {
+    node.hidden = node.dataset.setupStep !== step;
+  });
+}
+
+async function refreshSetupStatus() {
+  try {
+    const status = await setupApi('status');
+    if (status.ready) {
+      const account = status.telegram?.account || {};
+      showSetupStep('done');
+      const label = document.querySelector('#setup-account');
+      label.textContent = account.username ? `@${account.username}` : (account.firstName || 'Telegram account');
+      setupMessage('Telegram Research is connected and ready.', 'is-success');
+      return;
+    }
+
+    if (status.auth?.step === 'password') showSetupStep('password');
+    else if (status.auth?.step === 'code') showSetupStep('code');
+    else showSetupStep('phone');
+  } catch (error) {
+    showSetupStep('phone');
+    setupMessage(error.message, 'is-error');
+  }
+}
+
+function renderTelegramSetup() {
+  const app = document.querySelector('#app');
+  app.innerHTML = `
+    <div class="topbar">
+      <button class="topbar__back" data-home>‹ Home</button>
+      <span class="setup-badge">Owner only</span>
+    </div>
+
+    <section class="setup-hero">
+      <span class="setup-hero__icon">${icon('search')}</span>
+      <h1>Telegram Research</h1>
+      <p>Authorize your extra Telegram account once. The worker stays read-only and saves the session privately on Railway.</p>
+    </section>
+
+    <section class="setup-card">
+      <div id="setup-message" class="setup-message"></div>
+
+      <form data-setup-step="phone" id="phone-form">
+        <label for="setup-phone">Telegram phone</label>
+        <input id="setup-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+1 222 333 4455" required>
+        <small>Use the extra account for Research. International format with +country code.</small>
+        <button type="submit" class="setup-primary">Send Telegram code</button>
+      </form>
+
+      <form data-setup-step="code" id="code-form" hidden>
+        <label for="setup-code">Code from Telegram</label>
+        <input id="setup-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="12345" required>
+        <small>The code normally arrives inside Telegram, not by SMS.</small>
+        <button type="submit" class="setup-primary">Confirm code</button>
+        <button type="button" class="setup-secondary" data-reset-auth>Start over</button>
+      </form>
+
+      <form data-setup-step="password" id="password-form" hidden>
+        <label for="setup-password">Telegram 2FA password</label>
+        <input id="setup-password" type="password" autocomplete="current-password" placeholder="Your Telegram 2FA password" required>
+        <small>This is sent only to the private worker for Telegram authorization and is not stored.</small>
+        <button type="submit" class="setup-primary">Finish authorization</button>
+        <button type="button" class="setup-secondary" data-reset-auth>Start over</button>
+      </form>
+
+      <div data-setup-step="done" hidden class="setup-done">
+        <div class="setup-done__check">✓</div>
+        <strong id="setup-account">Telegram account</strong>
+        <span>Research worker connected</span>
+        <button type="button" class="setup-secondary" data-home>Back to Astel</button>
+      </div>
+    </section>
+
+    <p class="setup-footnote">No auto-DM, posting or outreach is enabled. This connection is for reading/searching the sources you explicitly add.</p>
+  `;
+
+  document.querySelectorAll('[data-home]').forEach((button) => button.addEventListener('click', render));
+
+  document.querySelector('#phone-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setSetupBusy(true);
+    setupMessage('Sending code…');
+    try {
+      const phone = document.querySelector('#setup-phone').value.trim().replace(/[\s()-]/g, '');
+      await setupApi('begin', { method: 'POST', body: { phone } });
+      showSetupStep('code');
+      setupMessage('Code sent. Check Telegram.', 'is-success');
+      document.querySelector('#setup-code').focus();
+    } catch (error) {
+      setupMessage(error.message, 'is-error');
+    } finally {
+      setSetupBusy(false);
+    }
+  });
+
+  document.querySelector('#code-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setSetupBusy(true);
+    setupMessage('Checking code…');
+    try {
+      const code = document.querySelector('#setup-code').value.trim();
+      const result = await setupApi('code', { method: 'POST', body: { code } });
+      if (result.step === 'password') {
+        showSetupStep('password');
+        setupMessage('2FA is enabled. Enter the Telegram password.');
+        document.querySelector('#setup-password').focus();
+      } else {
+        showSetupStep('done');
+        document.querySelector('#setup-account').textContent = result.account?.username ? `@${result.account.username}` : (result.account?.firstName || 'Telegram account');
+        setupMessage('Connected. Session saved on Railway.', 'is-success');
+      }
+    } catch (error) {
+      setupMessage(error.message, 'is-error');
+    } finally {
+      setSetupBusy(false);
+    }
+  });
+
+  document.querySelector('#password-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setSetupBusy(true);
+    setupMessage('Finishing authorization…');
+    try {
+      const password = document.querySelector('#setup-password').value;
+      const result = await setupApi('password', { method: 'POST', body: { password } });
+      document.querySelector('#setup-password').value = '';
+      showSetupStep('done');
+      document.querySelector('#setup-account').textContent = result.account?.username ? `@${result.account.username}` : (result.account?.firstName || 'Telegram account');
+      setupMessage('Connected. Session saved on Railway.', 'is-success');
+    } catch (error) {
+      document.querySelector('#setup-password').value = '';
+      setupMessage(error.message, 'is-error');
+    } finally {
+      setSetupBusy(false);
+    }
+  });
+
+  document.querySelectorAll('[data-reset-auth]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      setSetupBusy(true);
+      try {
+        await setupApi('reset', { method: 'POST', body: {} });
+        showSetupStep('phone');
+        setupMessage('Authorization reset.');
+      } catch (error) {
+        setupMessage(error.message, 'is-error');
+      } finally {
+        setSetupBusy(false);
+      }
+    });
+  });
+
+  refreshSetupStatus();
+}
+
 function bindEvents() {
   document.querySelectorAll('[data-module]').forEach((button) => {
     button.addEventListener('click', () => {
       const item = modules.find((module) => module.id === button.dataset.module);
+      if (item.id === 'settings') return renderTelegramSetup();
       showSheet(item.title, `${item.description}. This block is already modular — we can connect real functionality here without rebuilding the Home screen.`);
     });
   });
@@ -121,6 +312,7 @@ function bindEvents() {
   document.querySelectorAll('[data-action]').forEach((button) => {
     button.addEventListener('click', () => {
       const item = quickActions.find((action) => action.id === button.dataset.action);
+      if (item.id === 'telegram-setup') return renderTelegramSetup();
       showSheet(item.title, `${item.subtitle}. Action wiring comes in the next implementation step.`);
     });
   });
@@ -129,6 +321,7 @@ function bindEvents() {
     button.addEventListener('click', () => {
       document.querySelectorAll('[data-nav]').forEach((item) => item.classList.remove('is-active'));
       button.classList.add('is-active');
+      if (button.dataset.nav === 'settings') return renderTelegramSetup();
       if (button.dataset.nav !== 'home') {
         const item = modules.find((module) => module.id === button.dataset.nav);
         showSheet(item?.title || 'Astel', item?.description || 'This section is ready to be connected.');
