@@ -15,6 +15,7 @@ const { createOpenAIProvider } = require("./ai/openaiProvider");
 const { createAIEngine } = require("./ai/aiEngine");
 const { createTelegramPublisher } = require("./publisher/telegramPublisher");
 const { createSystemSkill } = require("./skills/systemSkill");
+const { createResearchSkill } = require("./skills/researchSkill");
 const { createAIChatSkill } = require("./skills/aiChatSkill");
 const { createSkillRegistry } = require("./skills/skillRegistry");
 const { createAssistantPipeline } = require("./assistantPipeline");
@@ -81,6 +82,7 @@ function createApp({
   });
   const skills = skillRegistry || createSkillRegistry([
     createSystemSkill({ policy, conversationStore: memory, redisClient: redis }),
+    createResearchSkill({ provider, conversationStore: memory, logger: log }),
     createAIChatSkill({ aiEngine: engine, conversationStore: memory, logger: log }),
   ]);
   const assistant = assistantPipeline || createAssistantPipeline({
@@ -101,7 +103,7 @@ function createApp({
       ok: redisUp,
       service: "astel-telegram",
       product: "Astel Assistant",
-      version: "0.2.1",
+      version: "0.3.0",
       configured,
       botEnabled: policy.botEnabled,
       dryRun: policy.botDryRun,
