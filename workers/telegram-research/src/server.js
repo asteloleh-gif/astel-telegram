@@ -1,10 +1,14 @@
 const express = require("express");
 const { loadConfig } = require("./config");
 const { createTelegramResearchClient } = require("./telegramClient");
+const { createSetupAuth } = require("./setupAuth");
 
 function createApp({ env = process.env } = {}) {
   const config = loadConfig(env);
   const telegram = createTelegramResearchClient(config);
+  const setupAuth = createSetupAuth(config, {
+    onSessionSaved: async () => telegram.disconnect(),
+  });
   const app = express();
 
   app.disable("x-powered-by");
@@ -13,7 +17,7 @@ function createApp({ env = process.env } = {}) {
   app.get("/", (_req, res) => {
     res.json({
       service: "astel-telegram-research-worker",
-      version: "0.1.0",
+      version: "0.2.0",
       mode: "read-only",
     });
   });
@@ -25,7 +29,7 @@ function createApp({ env = process.env } = {}) {
       ok: true,
       ready,
       service: "astel-telegram-research-worker",
-      version: "0.1.0",
+      version: "0.2.0",
       readOnly: true,
       telegram: {
         configured: state.configured,
@@ -42,6 +46,51 @@ function createApp({ env = process.env } = {}) {
     const provided = req.get("x-astel-worker-key") || "";
     if (provided !== config.workerApiKey) return res.status(401).json({ error: "UNAUTHORIZED" });
     next();
+  });
+
+  app.get("/setup/status", async (_req, res) => {
+    const state = await telegram.status();
+    res.json({
+      ok: true,
+      ready: Boolean(state.configured && state.connected && state.authorized),
+      telegram: {
+        configured: state.configured,
+        connected: state.connected,
+        authorized: state.authorized,
+        account: state.account,
+      },
+      auth: setupAuth.status(),
+      persistentSession: Boolean(config.sessionFile || config.session),
+    });
+  });
+
+  app.post("/setup/begin", async (req, res) => {
+    try {
+      res.json(await setupAuth.begin(req.body?.phone));
+    } catch (error) {
+      res.status(400).json({ error: error?.message || "TELEGRAM_AUTH_BEGIN_FAILED" });
+    }
+  });
+
+  app.post("/setup/code", async (req, res) => {
+    try {
+      res.json(await setupAuth.verifyCode(req.body?.code));
+    } catch (error) {
+      res.status(400).json({ error: error?.message || "TELEGRAM_AUTH_CODE_FAILED" });
+    }
+  });
+
+  app.post("/setup/password", async (req, res) => {
+    try {
+      res.json(await setupAuth.verifyPassword(req.body?.password));
+    } catch (error) {
+      res.status(400).json({ error: error?.message || "TELEGRAM_AUTH_PASSWORD_FAILED" });
+    }
+  });
+
+  app.post("/setup/reset", async (_req, res) => {
+    await setupAuth.reset();
+    res.json({ ok: true });
   });
 
   app.get("/sources", (_req, res) => {
@@ -70,11 +119,11 @@ function createApp({ env = process.env } = {}) {
     }
   });
 
-  return { app, config, telegram };
+  return { app, config, telegram, setupAuth };
 }
 
 async function start() {
-  const { app, config, telegram } = createApp();
+  const { app, config, telegram, setupAuth } = createApp();
   const server = app.listen(config.port, () => {
     console.log(JSON.stringify({
       event: "WORKER_STARTED",
@@ -89,6 +138,7 @@ async function start() {
     .catch((error) => console.error(JSON.stringify({ event: "TELEGRAM_CONNECT_FAILED", error: error?.message || String(error) })));
 
   const shutdown = async () => {
+    await setupAuth.reset().catch(() => null);
     await telegram.disconnect();
     server.close(() => process.exit(0));
   };
