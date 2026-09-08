@@ -2,7 +2,10 @@ function createTelegramPublisher({ telegramAdapter, reservationStore, logger, po
   if (!telegramAdapter?.sendMessage) throw new Error("telegramPublisher requires telegramAdapter.sendMessage");
   if (!reservationStore) throw new Error("telegramPublisher requires reservationStore");
 
-  async function publish(event, text) {
+  async function publish(event, candidate) {
+    const payload = typeof candidate === "string" ? { text: candidate } : (candidate || {});
+    const text = String(payload.text || "");
+    const replyMarkup = payload.replyMarkup || null;
     const base = {
       traceId: event.traceId,
       conversationId: event.conversationId,
@@ -28,6 +31,7 @@ function createTelegramPublisher({ telegramAdapter, reservationStore, logger, po
         text,
         replyToMessageId: event.messageId,
         threadId: event.threadId,
+        replyMarkup,
       });
       await reservationStore.setState(
         event.conversationId,
