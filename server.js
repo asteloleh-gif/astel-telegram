@@ -101,7 +101,7 @@ function createApp({
       ok: redisUp,
       service: "astel-telegram",
       product: "Astel Assistant",
-      version: "0.2.0",
+      version: "0.2.1",
       configured,
       botEnabled: policy.botEnabled,
       dryRun: policy.botDryRun,
@@ -113,6 +113,19 @@ function createApp({
   });
 
   app.post("/telegram/webhook", async (req, res) => {
+    const expectedSecret = env.TELEGRAM_WEBHOOK_SECRET || "";
+    const receivedSecret = req.get("x-telegram-bot-api-secret-token") || "";
+    if (expectedSecret && receivedSecret !== expectedSecret) {
+      log.warn({
+        traceId: null,
+        reasonCode: "WEBHOOK_SECRET_INVALID",
+        conversationId: null,
+        messageId: null,
+        userId: null,
+      });
+      return res.sendStatus(401);
+    }
+
     res.sendStatus(200);
 
     try {
@@ -177,6 +190,7 @@ function createApp({
     app,
     policy,
     logger: log,
+    telegramAdapter: telegram,
     redisClient: redis,
     dedupeStore: dedupe,
     reservationStore: reservation,
@@ -190,7 +204,7 @@ function createApp({
 }
 
 async function start() {
-  const { app, logger, redisClient } = createApp();
+  const { app, logger, redisClient, telegramAdapter } = createApp();
 
   try {
     await redisClient.connect();
@@ -206,14 +220,53 @@ async function start() {
   }
 
   const port = Number(process.env.PORT || 3000);
-  app.listen(port, () => logger.info({
-    traceId: null,
-    reasonCode: "SERVER_STARTED",
-    conversationId: null,
-    messageId: null,
-    userId: null,
-    extra: { port },
-  }));
+  app.listen(port, async () => {
+    logger.info({
+      traceId: null,
+      reasonCode: "SERVER_STARTED",
+      conversationId: null,
+      messageId: null,
+      userId: null,
+      extra: { port },
+    });
+
+    const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+    if (process.env.TELEGRAM_BOT_TOKEN && publicBaseUrl) {
+      try {
+        const bot = await telegramAdapter.getMe();
+        logger.info({
+          traceId: null,
+          reasonCode: "TELEGRAM_BOT_READY",
+          conversationId: null,
+          messageId: null,
+          userId: null,
+          extra: { botId: bot?.id || null, username: bot?.username || null },
+        });
+        const webhookUrl = `${publicBaseUrl}/telegram/webhook`;
+        await telegramAdapter.setWebhook({
+          url: webhookUrl,
+          secretToken: process.env.TELEGRAM_WEBHOOK_SECRET || null,
+        });
+        logger.info({
+          traceId: null,
+          reasonCode: "TELEGRAM_WEBHOOK_SET",
+          conversationId: null,
+          messageId: null,
+          userId: null,
+          extra: { webhookUrl },
+        });
+      } catch (err) {
+        logger.error({
+          traceId: null,
+          reasonCode: "TELEGRAM_WEBHOOK_SETUP_FAILED",
+          conversationId: null,
+          messageId: null,
+          userId: null,
+          extra: { error: err?.message || String(err) },
+        });
+      }
+    }
+  });
 }
 
 if (require.main === module) start();
