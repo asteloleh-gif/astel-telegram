@@ -1,6 +1,6 @@
 (() => {
   const tg = window.Telegram?.WebApp;
-  const SETTINGS_KEY = 'astel.telegramResearch.keywordSearchSettings.v1';
+  const SETTINGS_KEY = 'astel.telegramResearch.keywordSearchSettings.v2';
 
   const esc = (v) => String(v ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -10,25 +10,55 @@
     return { accept: 'application/json', 'content-type': 'application/json', 'x-telegram-init-data': tg?.initData || '' };
   }
 
-  async function searchTelegram(query, periodHours) {
+  async function apiPost(path, body) {
     if (!tg?.initData) throw new Error('Open Astel from the Telegram bot to use Telegram Research.');
-    const response = await fetch('/api/telegram-research/search', {
-      method: 'POST', headers: headers(), body: JSON.stringify({ query, periodHours, limit: 20 }),
-    });
+    const response = await fetch(path, { method: 'POST', headers: headers(), body: JSON.stringify(body || {}) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error || `Request failed (${response.status})`);
     return payload;
   }
 
+  function searchTelegram(query, periodHours) {
+    return apiPost('/api/telegram-research/search', { query, periodHours, limit: 20 });
+  }
+
+  async function smartMatchKeywords(keywords) {
+    let seeds = keywords.slice(0, 8);
+    while (seeds.length > 1 && JSON.stringify(seeds).length > 450) seeds = seeds.slice(0, -1);
+    if (!seeds.length || JSON.stringify(seeds).length > 450) return { searchKeywords: keywords, items: [] };
+    const payload = await apiPost('/api/telegram-research/ai-search', {
+      goal: JSON.stringify(seeds),
+      languages: ['smart-match'],
+      preview: true,
+    });
+    const generated = Array.isArray(payload.searchKeywords)
+      ? payload.searchKeywords
+      : (payload.queries || []).map((item) => item.query).filter(Boolean);
+    const combined = [];
+    for (const value of [...keywords, ...generated]) {
+      const query = String(value || '').trim();
+      if (!query || combined.some((item) => item.toLocaleLowerCase() === query.toLocaleLowerCase())) continue;
+      combined.push(query);
+      if (combined.length >= 40) break;
+    }
+    return { ...payload, searchKeywords: combined };
+  }
+
   function settings() {
     try {
       const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-      return { periodHours: [24, 168, 720].includes(Number(raw.periodHours)) ? Number(raw.periodHours) : 168 };
-    } catch (_error) { return { periodHours: 168 }; }
+      return {
+        periodHours: [24, 168, 720].includes(Number(raw.periodHours)) ? Number(raw.periodHours) : 168,
+        smartMatching: raw.smartMatching !== false,
+      };
+    } catch (_error) { return { periodHours: 168, smartMatching: true }; }
   }
 
-  function saveSettings(periodHours) {
-    const value = { periodHours: [24, 168, 720].includes(Number(periodHours)) ? Number(periodHours) : 168 };
+  function saveSettings(periodHours, smartMatching = true) {
+    const value = {
+      periodHours: [24, 168, 720].includes(Number(periodHours)) ? Number(periodHours) : 168,
+      smartMatching: smartMatching !== false,
+    };
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(value)); } catch (_error) {}
     try { tg?.CloudStorage?.setItem?.(SETTINGS_KEY, JSON.stringify(value), () => {}); } catch (_error) {}
     return value;
@@ -97,7 +127,7 @@
     const style = document.createElement('style');
     style.id = 'astel-keyword-set-styles';
     style.textContent = `
-      .ks-wrap{padding-bottom:120px}.ks-card{background:rgba(255,255,255,.94);border:1px solid rgba(24,34,62,.08);border-radius:24px;padding:20px;margin-bottom:16px;box-shadow:0 14px 35px rgba(70,92,140,.08)}
+      .ks-wrap{padding-bottom:150px}.ks-card{background:rgba(255,255,255,.94);border:1px solid rgba(24,34,62,.08);border-radius:24px;padding:20px;margin-bottom:16px;box-shadow:0 14px 35px rgba(70,92,140,.08)}
       .ks-info{background:#f3f7ff;border-radius:20px;padding:15px 16px;margin-bottom:16px;color:#687690;line-height:1.45}.ks-info strong{display:block;color:#17213c;margin-bottom:4px}
       .ks-textarea{width:100%;min-height:118px;box-sizing:border-box;border:1px solid rgba(21,31,57,.14);border-radius:18px;padding:15px 16px;font:inherit;line-height:1.4;background:#fff;color:#11182e;outline:none}
       .ks-textarea:focus,.ks-select:focus{border-color:rgba(41,124,255,.55);box-shadow:0 0 0 3px rgba(41,124,255,.09)}
@@ -107,6 +137,8 @@
       .ks-status{border-radius:16px;padding:12px 14px;margin-bottom:12px;font-weight:650}.ks-loading{background:#eef3fb;color:#53627e}.ks-ok{background:#e9f8f0;color:#148154}.ks-error{background:#fff0f1;color:#ad3340}
       .ks-head{display:flex;justify-content:space-between;align-items:center;margin:20px 4px 9px}.ks-head h3{margin:0}.ks-result{background:rgba(255,255,255,.95);border:1px solid rgba(24,34,62,.08);border-radius:22px;padding:16px;margin:10px 0}.ks-result small{color:#7a879f}.ks-text{white-space:pre-wrap;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden}.ks-tags{margin-top:9px}.ks-actions{margin-top:10px}
       .ks-secondary{border:0;border-radius:14px;padding:10px 13px;background:#edf2fb;color:#42516c;font:inherit;font-weight:700}.ks-link{border:0;background:transparent;color:#1675ff;font:inherit;font-weight:750}
+      .ks-smart-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:13px 0 2px;border-top:1px solid rgba(24,34,62,.08)}.ks-smart-row small{display:block;color:#7a879f;margin-top:3px}.ks-switch{position:relative;width:48px;height:29px;flex:0 0 auto}.ks-switch input{opacity:0;width:0;height:0}.ks-switch span{position:absolute;inset:0;background:#dfe5ef;border-radius:999px}.ks-switch span:after{content:'';position:absolute;width:23px;height:23px;top:3px;left:3px;background:#fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,.14);transition:.18s}.ks-switch input:checked+span{background:#1684ff}.ks-switch input:checked+span:after{transform:translateX(19px)}
+      .ks-smart-plan{margin-top:12px;padding:12px 13px;border-radius:16px;background:#f8f9fc;color:#66738b;font-size:13px;line-height:1.45}.ks-smart-plan strong{color:#2d3953}
       .ks-nav{position:sticky;bottom:0;display:grid;grid-template-columns:repeat(4,1fr);margin:26px -4px -4px;padding:10px 8px calc(10px + env(safe-area-inset-bottom));background:rgba(248,250,255,.97);backdrop-filter:blur(18px);border-top:1px solid rgba(24,34,62,.08);z-index:10}.ks-nav button{border:0;background:transparent;color:#7b88a0;padding:6px 2px;font:inherit;font-size:11px;font-weight:700}.ks-nav button span{display:block;font-size:19px;margin-bottom:3px}.ks-nav .on{color:#157cff}.ks-select{width:100%;border:1px solid rgba(21,31,57,.14);border-radius:16px;padding:13px 14px;background:#fff;font:inherit;color:#11182e}
     `;
     document.head.appendChild(style);
@@ -170,11 +202,13 @@
     const pref = settings();
     app.innerHTML = `<div class="ks-wrap">
       <div class="topbar"><button class="topbar__back" data-back>‹ Research</button><span class="setup-badge">Read only</span></div>
-      <section class="setup-hero" style="padding-bottom:10px"><span class="setup-hero__icon">⌕</span><h1>Telegram Search</h1><p>Multiple exact keywords in one run.</p></section>
-      <div class="ks-info"><strong>Keyword set</strong>Separate words or phrases with commas or new lines. Astel searches each one, merges results and removes duplicates.</div>
+      <section class="setup-hero" style="padding-bottom:10px"><span class="setup-hero__icon">⌕</span><h1>Telegram Search</h1><p>Search multiple keywords in one run.</p></section>
+      <div class="ks-info"><strong>Keyword set</strong>Separate words or phrases with commas or new lines. Astel searches each one, merges results and removes duplicates. Smart Match can keep the original and add close typo/grammar variants.</div>
       <section class="ks-card"><div id="ks-status"></div><label for="ks-keywords" style="font-weight:800">Keywords <span id="ks-count" style="float:right;color:#7a879f;font-weight:600">0/20</span></label>
         <textarea id="ks-keywords" class="ks-textarea" placeholder="тканина\nкуплю тканину\nпродам тканину"></textarea><div id="ks-preview" class="ks-preview"></div>
         <div class="ks-examples"><button class="ks-example" data-add="тканина">+ тканина</button><button class="ks-example" data-add="куплю">+ куплю</button><button class="ks-example" data-add="продам">+ продам</button></div>
+        <div class="ks-smart-row"><div><strong>Smart matching</strong><small>Typos, keyboard/translit mistakes and close word forms. No topic expansion.</small></div><label class="ks-switch"><input type="checkbox" id="ks-smart" ${pref.smartMatching ? 'checked' : ''}><span></span></label></div>
+        <div id="ks-smart-plan"></div>
         <button class="ks-primary" data-run>Search all keywords</button></section>
       <section class="ks-card" style="display:flex;justify-content:space-between;align-items:center"><div><strong>🗓 Period</strong><div style="color:#7a879f;margin-top:3px">${periodLabel(pref.periodHours)}</div></div><button class="ks-link" data-settings>Change</button></section>
       <section><div class="ks-head"><h3>Results</h3><span id="ks-results-count">—</span></div><div id="ks-results"></div></section>${nav('search')}</div>`;
@@ -183,12 +217,32 @@
     const input = app.querySelector('#ks-keywords'); input.addEventListener('input', () => syncPreview(app)); syncPreview(app);
     app.querySelectorAll('[data-add]').forEach((button) => button.addEventListener('click', () => { input.value = parseKeywords(`${input.value}\n${button.dataset.add}`).join('\n'); syncPreview(app); input.focus(); }));
     app.querySelector('[data-run]').addEventListener('click', async (event) => {
-      const keywords = syncPreview(app), status = app.querySelector('#ks-status'), results = app.querySelector('#ks-results'), count = app.querySelector('#ks-results-count'), button = event.currentTarget;
+      const keywords = syncPreview(app), status = app.querySelector('#ks-status'), results = app.querySelector('#ks-results'), count = app.querySelector('#ks-results-count'), button = event.currentTarget, smartPlan = app.querySelector('#ks-smart-plan');
       if (!keywords.length) { status.className = 'ks-status ks-error'; status.textContent = 'Add at least one keyword.'; return; }
-      button.disabled = true; status.className = 'ks-status ks-loading'; results.innerHTML = ''; count.textContent = '…';
+      const smartEnabled = app.querySelector('#ks-smart').checked;
+      button.disabled = true; status.className = 'ks-status ks-loading'; results.innerHTML = ''; smartPlan.innerHTML = ''; count.textContent = '…';
       try {
-        const payload = await searchSet(keywords, pref.periodHours, (i, total, keyword) => { status.textContent = `Searching ${i}/${total}: ${keyword}`; });
-        count.textContent = String(payload.count || 0); status.className = 'ks-status ks-ok'; status.textContent = `Searched ${keywords.length} keyword(s) across ${payload.sources.length} source(s).`; renderResults(results, payload); tg?.HapticFeedback?.notificationOccurred?.('success');
+        let searchKeywords = [...keywords];
+        let smartFallback = false;
+        if (smartEnabled) {
+          status.textContent = 'Smart Match is checking spelling and close word forms…';
+          try {
+            const match = await smartMatchKeywords(keywords);
+            searchKeywords = match.searchKeywords?.length ? match.searchKeywords : keywords;
+            const originalKeys = new Set(keywords.map((q) => q.toLocaleLowerCase()));
+            const extras = searchKeywords.filter((q) => !originalKeys.has(q.toLocaleLowerCase()));
+            smartPlan.innerHTML = extras.length
+              ? `<div class="ks-smart-plan"><strong>Also searching:</strong> ${extras.slice(0, 16).map(esc).join(' · ')}</div>`
+              : '<div class="ks-smart-plan"><strong>Smart Match:</strong> no extra variants needed.</div>';
+          } catch (_error) {
+            smartFallback = true;
+            smartPlan.innerHTML = '<div class="ks-smart-plan"><strong>Smart Match unavailable.</strong> Exact keywords are still being searched.</div>';
+          }
+        }
+        const payload = await searchSet(searchKeywords, pref.periodHours, (i, total, keyword) => { status.textContent = `Searching ${i}/${total}: ${keyword}`; });
+        count.textContent = String(payload.count || 0); status.className = 'ks-status ks-ok';
+        status.textContent = `${smartFallback ? 'Exact fallback · ' : ''}Searched ${keywords.length} keyword(s)${searchKeywords.length !== keywords.length ? ` as ${searchKeywords.length} lexical queries` : ''} across ${payload.sources.length} source(s).`;
+        renderResults(results, payload); tg?.HapticFeedback?.notificationOccurred?.('success');
       } catch (error) { count.textContent = '0'; status.className = 'ks-status ks-error'; status.textContent = error.message; }
       finally { button.disabled = false; }
     });
@@ -197,16 +251,18 @@
   function renderSettings() {
     styles(); const app = document.querySelector('#app'); if (!app) return; const pref = settings();
     app.innerHTML = `<div class="ks-wrap"><div class="topbar"><button class="topbar__back" data-back>‹ Search</button><span class="setup-badge">Preferences</span></div>
-      <section class="setup-hero"><span class="setup-hero__icon">⚙</span><h1>Search Settings</h1><p>Default period for keyword search.</p></section>
-      <section class="ks-card"><label style="font-weight:800">Default period</label><select id="ks-period" class="ks-select"><option value="24" ${pref.periodHours === 24 ? 'selected' : ''}>Last 24 hours</option><option value="168" ${pref.periodHours === 168 ? 'selected' : ''}>Last 7 days</option><option value="720" ${pref.periodHours === 720 ? 'selected' : ''}>Last 30 days</option></select><button class="ks-primary" data-save>Save Settings</button><div id="ks-save" style="text-align:center;color:#7a879f;margin-top:10px"></div></section>${nav('settings')}</div>`;
-    app.querySelector('[data-back]').addEventListener('click', renderSearch); bindNav(app); app.querySelector('[data-save]').addEventListener('click', () => { const saved = saveSettings(app.querySelector('#ks-period').value); app.querySelector('#ks-save').textContent = `Saved: ${periodLabel(saved.periodHours)}.`; });
+      <section class="setup-hero"><span class="setup-hero__icon">⚙</span><h1>Search Settings</h1><p>Defaults for keyword search.</p></section>
+      <section class="ks-card"><label style="font-weight:800">Default period</label><select id="ks-period" class="ks-select"><option value="24" ${pref.periodHours === 24 ? 'selected' : ''}>Last 24 hours</option><option value="168" ${pref.periodHours === 168 ? 'selected' : ''}>Last 7 days</option><option value="720" ${pref.periodHours === 720 ? 'selected' : ''}>Last 30 days</option></select>
+      <div class="ks-smart-row"><div><strong>Smart matching by default</strong><small>Keep original keywords and add only close spelling/word-form variants.</small></div><label class="ks-switch"><input type="checkbox" id="ks-setting-smart" ${pref.smartMatching ? 'checked' : ''}><span></span></label></div>
+      <button class="ks-primary" data-save>Save Settings</button><div id="ks-save" style="text-align:center;color:#7a879f;margin-top:10px"></div></section>${nav('settings')}</div>`;
+    app.querySelector('[data-back]').addEventListener('click', renderSearch); bindNav(app); app.querySelector('[data-save]').addEventListener('click', () => { const saved = saveSettings(app.querySelector('#ks-period').value, app.querySelector('#ks-setting-smart').checked); app.querySelector('#ks-save').textContent = `Saved: ${periodLabel(saved.periodHours)} · Smart Match ${saved.smartMatching ? 'ON' : 'OFF'}.`; });
   }
 
   function renderHub() {
     styles(); const app = document.querySelector('#app'); if (!app) return;
     app.innerHTML = `<div class="ks-wrap"><div class="topbar"><button class="topbar__back" data-home>‹ Home</button><span class="setup-badge">Read only</span></div>
       <section class="setup-hero"><span class="setup-hero__icon">⌕</span><h1>Telegram Research</h1><p>Search and manage Telegram sources through your connected Research account.</p></section>
-      <section class="quick-list"><button class="quick-action" data-search><span><strong>Search Telegram</strong><span>Search a set of exact keywords in one run</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-sources><span><strong>Sources</strong><span>Add or remove Telegram groups and channels</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-settings><span><strong>Search Settings</strong><span>Default search period</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-collector><span><strong>Group Collector</strong><span>Source discovery comes next</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-account><span><strong>Account</strong><span>Research account connection and authorization</span></span><span class="quick-action__arrow">›</span></button></section>${nav('search')}</div>`;
+      <section class="quick-list"><button class="quick-action" data-search><span><strong>Search Telegram</strong><span>Keyword sets with optional Smart Match</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-sources><span><strong>Sources</strong><span>Add or remove Telegram groups and channels</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-settings><span><strong>Search Settings</strong><span>Period and Smart Match default</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-collector><span><strong>Group Collector</strong><span>Source discovery comes next</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-account><span><strong>Account</strong><span>Research account connection and authorization</span></span><span class="quick-action__arrow">›</span></button></section>${nav('search')}</div>`;
     app.querySelector('[data-home]').addEventListener('click', () => window.render?.()); app.querySelector('[data-search]').addEventListener('click', renderSearch); app.querySelector('[data-sources]').addEventListener('click', () => window.renderTelegramSources?.()); app.querySelector('[data-settings]').addEventListener('click', renderSettings); app.querySelector('[data-account]').addEventListener('click', () => window.renderTelegramSetup?.()); app.querySelector('[data-collector]').addEventListener('click', () => window.showSheet?.('Group Collector', 'Next module: collect and classify Telegram groups, then add selected groups into Sources.')); bindNav(app);
   }
 
