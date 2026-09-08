@@ -44,19 +44,34 @@ function createOpenAIProvider({
   maxOutputTokens = 1600,
   fetchImpl = globalThis.fetch,
 } = {}) {
-  async function generate({ instructions, input, tools = null, include = null, maxToolCalls = null }) {
+  async function generate({
+    instructions,
+    input,
+    tools = null,
+    include = null,
+    maxToolCalls = null,
+    model: requestModel = null,
+    reasoningEffort: requestReasoningEffort = null,
+    maxOutputTokens: requestMaxOutputTokens = null,
+  }) {
     if (!apiKey) throw new AIProviderError("OPENAI_API_KEY missing", { code: "AI_NOT_CONFIGURED" });
+
+    const resolvedModel = requestModel || model;
+    const resolvedReasoningEffort = requestReasoningEffort || reasoningEffort;
+    const resolvedMaxOutputTokens = Number.isInteger(requestMaxOutputTokens) && requestMaxOutputTokens > 0
+      ? requestMaxOutputTokens
+      : maxOutputTokens;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     let response;
     try {
       const body = {
-        model,
+        model: resolvedModel,
         instructions,
         input,
-        reasoning: { effort: reasoningEffort },
-        max_output_tokens: maxOutputTokens,
+        reasoning: { effort: resolvedReasoningEffort },
+        max_output_tokens: resolvedMaxOutputTokens,
       };
       if (Array.isArray(tools) && tools.length) body.tools = tools;
       if (Array.isArray(include) && include.length) body.include = include;
@@ -89,7 +104,7 @@ function createOpenAIProvider({
     return {
       text,
       sources: extractResponseSources(data),
-      model: data?.model || model,
+      model: data?.model || resolvedModel,
       responseId: data?.id || null,
       usage: data?.usage || null,
     };
