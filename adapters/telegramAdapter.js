@@ -37,27 +37,23 @@ function createTelegramAdapter({
     };
   }
 
-  async function sendMessage({ chatId, text, replyToMessageId = null, threadId = null }) {
+  async function request(method, body, { ambiguousOnNetworkError = false } = {}) {
     if (!apiBase) throw new TelegramPublishError("TELEGRAM_BOT_TOKEN missing", { ambiguous: false });
-
-    const body = { chat_id: chatId, text };
-    if (replyToMessageId) body.reply_parameters = { message_id: Number(replyToMessageId) };
-    if (threadId) body.message_thread_id = Number(threadId);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
     let res;
     try {
-      res = await fetchImpl(`${apiBase}/sendMessage`, {
+      res = await fetchImpl(`${apiBase}/${method}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(body || {}),
         signal: controller.signal,
       });
     } catch (err) {
       throw new TelegramPublishError(
-        err?.name === "AbortError" ? "Telegram sendMessage timed out" : (err?.message || "Telegram network error"),
-        { ambiguous: true }
+        err?.name === "AbortError" ? `Telegram ${method} timed out` : (err?.message || `Telegram ${method} network error`),
+        { ambiguous: ambiguousOnNetworkError }
       );
     } finally {
       clearTimeout(timeout);
@@ -65,7 +61,7 @@ function createTelegramAdapter({
 
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.ok) {
-      throw new TelegramPublishError(data?.description || `Telegram sendMessage failed: ${res.status}`, {
+      throw new TelegramPublishError(data?.description || `Telegram ${method} failed: ${res.status}`, {
         code: data?.error_code || res.status,
         ambiguous: false,
       });
@@ -73,7 +69,29 @@ function createTelegramAdapter({
     return data.result;
   }
 
-  return { normalizeUpdate, sendMessage };
+  async function sendMessage({ chatId, text, replyToMessageId = null, threadId = null }) {
+    const body = { chat_id: chatId, text };
+    if (replyToMessageId) body.reply_parameters = { message_id: Number(replyToMessageId) };
+    if (threadId) body.message_thread_id = Number(threadId);
+    return request("sendMessage", body, { ambiguousOnNetworkError: true });
+  }
+
+  async function setWebhook({ url, secretToken = null }) {
+    if (!url) throw new Error("setWebhook requires url");
+    const body = {
+      url,
+      allowed_updates: ["message", "edited_message"],
+      drop_pending_updates: false,
+    };
+    if (secretToken) body.secret_token = secretToken;
+    return request("setWebhook", body);
+  }
+
+  async function getMe() {
+    return request("getMe", {});
+  }
+
+  return { normalizeUpdate, sendMessage, setWebhook, getMe };
 }
 
 module.exports = { createTelegramAdapter, TelegramPublishError };
