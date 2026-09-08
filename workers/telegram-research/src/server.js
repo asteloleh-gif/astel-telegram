@@ -17,11 +17,7 @@ function createApp({ env = process.env } = {}) {
   app.use(express.json({ limit: "256kb" }));
 
   app.get("/", (_req, res) => {
-    res.json({
-      service: "astel-telegram-research-worker",
-      version: "0.4.0",
-      mode: "read-only",
-    });
+    res.json({ service: "astel-telegram-research-worker", version: "0.5.0", mode: "read-only" });
   });
 
   app.get("/health", async (_req, res) => {
@@ -31,7 +27,7 @@ function createApp({ env = process.env } = {}) {
       ok: true,
       ready,
       service: "astel-telegram-research-worker",
-      version: "0.4.0",
+      version: "0.5.0",
       readOnly: true,
       telegram: {
         configured: state.configured,
@@ -67,27 +63,18 @@ function createApp({ env = process.env } = {}) {
   });
 
   app.post("/setup/begin", async (req, res) => {
-    try {
-      res.json(await setupAuth.begin(req.body?.phone));
-    } catch (error) {
-      res.status(400).json({ error: error?.message || "TELEGRAM_AUTH_BEGIN_FAILED" });
-    }
+    try { res.json(await setupAuth.begin(req.body?.phone)); }
+    catch (error) { res.status(400).json({ error: error?.message || "TELEGRAM_AUTH_BEGIN_FAILED" }); }
   });
 
   app.post("/setup/code", async (req, res) => {
-    try {
-      res.json(await setupAuth.verifyCode(req.body?.code));
-    } catch (error) {
-      res.status(400).json({ error: error?.message || "TELEGRAM_AUTH_CODE_FAILED" });
-    }
+    try { res.json(await setupAuth.verifyCode(req.body?.code)); }
+    catch (error) { res.status(400).json({ error: error?.message || "TELEGRAM_AUTH_CODE_FAILED" }); }
   });
 
   app.post("/setup/password", async (req, res) => {
-    try {
-      res.json(await setupAuth.verifyPassword(req.body?.password));
-    } catch (error) {
-      res.status(400).json({ error: error?.message || "TELEGRAM_AUTH_PASSWORD_FAILED" });
-    }
+    try { res.json(await setupAuth.verifyPassword(req.body?.password)); }
+    catch (error) { res.status(400).json({ error: error?.message || "TELEGRAM_AUTH_PASSWORD_FAILED" }); }
   });
 
   app.post("/setup/reset", async (_req, res) => {
@@ -102,8 +89,7 @@ function createApp({ env = process.env } = {}) {
 
   app.post("/sources", async (req, res) => {
     try {
-      const raw = req.body?.source;
-      const normalized = sourceStore.normalizeSource(raw);
+      const normalized = sourceStore.normalizeSource(req.body?.source);
       const inspected = await telegram.inspectSource(normalized);
       const result = sourceStore.add(inspected);
       res.status(result.created ? 201 : 200).json({ ok: true, created: result.created, source: result.item });
@@ -136,11 +122,23 @@ function createApp({ env = process.env } = {}) {
       });
     } catch (error) {
       const code = error?.message || "TELEGRAM_DIALOGS_FAILED";
-      const status = [
-        "TELEGRAM_SESSION_MISSING",
-        "TELEGRAM_SESSION_UNAUTHORIZED",
-        "TELEGRAM_NOT_AUTHORIZED",
-      ].includes(code) ? 503 : 400;
+      const status = ["TELEGRAM_SESSION_MISSING", "TELEGRAM_SESSION_UNAUTHORIZED", "TELEGRAM_NOT_AUTHORIZED"].includes(code) ? 503 : 400;
+      res.status(status).json({ error: code });
+    }
+  });
+
+  app.post("/collect", async (req, res) => {
+    try {
+      const periodHours = Math.max(1, Math.min(24 * 365, Number(req.body?.periodHours || 720)));
+      const limitPerSource = Math.max(1, Math.min(200, Number(req.body?.limitPerSource || 100)));
+      const requestedSources = Array.isArray(req.body?.sources)
+        ? req.body.sources.map((item) => String(item).trim()).filter(Boolean).slice(0, 50)
+        : null;
+      const sources = requestedSources?.length ? requestedSources : sourceStore.list().map((item) => item.source).slice(0, 50);
+      res.json(await telegram.collectRecent({ sources, periodHours, limitPerSource }));
+    } catch (error) {
+      const code = error?.message || "TELEGRAM_COLLECT_FAILED";
+      const status = ["TELEGRAM_SESSION_MISSING", "TELEGRAM_SESSION_UNAUTHORIZED", "TELEGRAM_NOT_AUTHORIZED"].includes(code) ? 503 : 400;
       res.status(status).json({ error: code });
     }
   });
@@ -153,19 +151,11 @@ function createApp({ env = process.env } = {}) {
       const requestedSources = Array.isArray(req.body?.sources)
         ? req.body.sources.map((item) => String(item).trim()).filter(Boolean)
         : null;
-      const sources = requestedSources?.length
-        ? requestedSources
-        : sourceStore.list().map((item) => item.source);
-
-      const result = await telegram.search({ query, periodHours, limit, sources });
-      res.json(result);
+      const sources = requestedSources?.length ? requestedSources : sourceStore.list().map((item) => item.source);
+      res.json(await telegram.search({ query, periodHours, limit, sources }));
     } catch (error) {
       const code = error?.message || "SEARCH_FAILED";
-      const status = [
-        "TELEGRAM_SESSION_MISSING",
-        "TELEGRAM_SESSION_UNAUTHORIZED",
-        "TELEGRAM_NOT_AUTHORIZED",
-      ].includes(code) ? 503 : 400;
+      const status = ["TELEGRAM_SESSION_MISSING", "TELEGRAM_SESSION_UNAUTHORIZED", "TELEGRAM_NOT_AUTHORIZED"].includes(code) ? 503 : 400;
       res.status(status).json({ error: code });
     }
   });
@@ -176,12 +166,7 @@ function createApp({ env = process.env } = {}) {
 async function start() {
   const { app, config, telegram, setupAuth, sourceStore } = createApp();
   const server = app.listen(config.port, () => {
-    console.log(JSON.stringify({
-      event: "WORKER_STARTED",
-      port: config.port,
-      readOnly: true,
-      sourcesConfigured: sourceStore.list().length,
-    }));
+    console.log(JSON.stringify({ event: "WORKER_STARTED", port: config.port, readOnly: true, sourcesConfigured: sourceStore.list().length }));
   });
 
   telegram.connect()
