@@ -11,6 +11,7 @@ function loadConfig(env = process.env) {
   const apiId = Number(env.TELEGRAM_API_ID || 0);
   const apiHash = String(env.TELEGRAM_API_HASH || "").trim();
   const session = String(env.TELEGRAM_SESSION || "").trim();
+  const sessionFile = String(env.TELEGRAM_SESSION_FILE || "").trim();
   const sources = parseSources(env.TELEGRAM_SOURCES);
 
   return {
@@ -18,6 +19,7 @@ function loadConfig(env = process.env) {
     apiId: Number.isFinite(apiId) ? apiId : 0,
     apiHash,
     session,
+    sessionFile,
     sources,
     workerApiKey: String(env.WORKER_API_KEY || "").trim(),
     maxSourcesPerSearch: Math.max(1, Math.min(50, Number(env.MAX_SOURCES_PER_SEARCH || 30))),

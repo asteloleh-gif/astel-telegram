@@ -20,6 +20,8 @@ const { createResearchSkill } = require("./skills/researchSkill");
 const { createAIChatSkill } = require("./skills/aiChatSkill");
 const { createSkillRegistry } = require("./skills/skillRegistry");
 const { createAssistantPipeline } = require("./assistantPipeline");
+const { createTelegramWebAppGuard } = require("./setup/telegramWebAppGuard");
+const { createTelegramResearchProxy } = require("./setup/telegramResearchProxy");
 
 function createApp({
   telegramAdapter,
@@ -98,6 +100,17 @@ function createApp({
     logger: log,
   });
 
+  const telegramResearch = createTelegramResearchProxy({
+    baseUrl: env.TELEGRAM_RESEARCH_WORKER_URL,
+    workerApiKey: env.TELEGRAM_RESEARCH_WORKER_KEY,
+    timeoutMs: Number(env.TELEGRAM_RESEARCH_WORKER_TIMEOUT_MS || 15000),
+  });
+  const telegramSetupGuard = createTelegramWebAppGuard({
+    botToken: env.TELEGRAM_BOT_TOKEN,
+    ownerUserId: policy.ownerUserId,
+    maxAgeSeconds: Number(env.MINI_APP_AUTH_MAX_AGE_SECONDS || 900),
+  });
+
   const heartbeatKey = `${policy.redisNamespace}:health:heartbeat`;
   const app = express();
   app.use(express.static(path.join(__dirname, "public")));
@@ -122,6 +135,37 @@ function createApp({
       },
       skills: skills.list(),
     });
+  });
+
+  async function runTelegramSetupAction(res, action) {
+    try {
+      return res.json(await action());
+    } catch (error) {
+      const status = Number(error?.status || 502);
+      return res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: error?.message || "TELEGRAM_RESEARCH_SETUP_FAILED",
+      });
+    }
+  }
+
+  app.get("/api/telegram-research/setup/status", telegramSetupGuard, async (_req, res) => {
+    await runTelegramSetupAction(res, () => telegramResearch.status());
+  });
+
+  app.post("/api/telegram-research/setup/begin", telegramSetupGuard, async (req, res) => {
+    await runTelegramSetupAction(res, () => telegramResearch.begin(req.body?.phone));
+  });
+
+  app.post("/api/telegram-research/setup/code", telegramSetupGuard, async (req, res) => {
+    await runTelegramSetupAction(res, () => telegramResearch.code(req.body?.code));
+  });
+
+  app.post("/api/telegram-research/setup/password", telegramSetupGuard, async (req, res) => {
+    await runTelegramSetupAction(res, () => telegramResearch.password(req.body?.password));
+  });
+
+  app.post("/api/telegram-research/setup/reset", telegramSetupGuard, async (_req, res) => {
+    await runTelegramSetupAction(res, () => telegramResearch.reset());
   });
 
   app.post("/telegram/webhook", async (req, res) => {
@@ -212,6 +256,7 @@ function createApp({
     publisher: telegramPublisher,
     skillRegistry: skills,
     assistantPipeline: assistant,
+    telegramResearch,
   };
 }
 

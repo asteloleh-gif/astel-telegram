@@ -1,5 +1,6 @@
 const { TelegramClient } = require("teleproto");
 const { StringSession } = require("teleproto/sessions");
+const { readSession } = require("./sessionStore");
 
 function toIsoDate(value) {
   if (!value) return null;
@@ -40,17 +41,22 @@ function createTelegramResearchClient(config) {
   let authorized = false;
   let account = null;
 
+  function getSession() {
+    return readSession(config);
+  }
+
   function isConfigured() {
-    return Boolean(config.apiId && config.apiHash && config.session);
+    return Boolean(config.apiId && config.apiHash && getSession());
   }
 
   async function connect() {
     if (connected && authorized && client) return { connected, authorized, account };
-    if (!isConfigured()) {
+    const sessionValue = getSession();
+    if (!(config.apiId && config.apiHash && sessionValue)) {
       return { connected: false, authorized: false, account: null, reason: "TELEGRAM_SESSION_MISSING" };
     }
 
-    const session = new StringSession(config.session);
+    const session = new StringSession(sessionValue);
     client = new TelegramClient(session, config.apiId, config.apiHash, {
       connectionRetries: config.connectionRetries,
     });
