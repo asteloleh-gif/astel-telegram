@@ -1,3 +1,5 @@
+const path = require("node:path");
+
 function parseSources(value) {
   return String(value || "")
     .split(/[\n,]/)
@@ -13,6 +15,8 @@ function loadConfig(env = process.env) {
   const session = String(env.TELEGRAM_SESSION || "").trim();
   const sessionFile = String(env.TELEGRAM_SESSION_FILE || "").trim();
   const sources = parseSources(env.TELEGRAM_SOURCES);
+  const sourceFile = String(env.TELEGRAM_SOURCES_FILE || "").trim()
+    || (sessionFile ? path.join(path.dirname(sessionFile), "telegram-sources.json") : "");
 
   return {
     port: Number(env.PORT || 3000),
@@ -21,6 +25,7 @@ function loadConfig(env = process.env) {
     session,
     sessionFile,
     sources,
+    sourceFile,
     workerApiKey: String(env.WORKER_API_KEY || "").trim(),
     maxSourcesPerSearch: Math.max(1, Math.min(50, Number(env.MAX_SOURCES_PER_SEARCH || 30))),
     maxResults: Math.max(1, Math.min(100, Number(env.MAX_RESULTS || 50))),
