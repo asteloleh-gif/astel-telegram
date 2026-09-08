@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   normalizeLanguages,
+  normalizePreferences,
   parsePlan,
   planTelegramQueries,
   runTelegramAiSearch,
@@ -10,6 +11,16 @@ const {
 test('normalizeLanguages keeps supported unique languages', () => {
   assert.deepEqual(normalizeLanguages(['uk', 'en', 'uk', 'xx']), ['uk', 'en']);
   assert.deepEqual(normalizeLanguages([]), ['auto']);
+});
+
+test('normalizePreferences applies safe defaults', () => {
+  assert.deepEqual(normalizePreferences({}), {
+    smartLanguageSelection: true,
+    autoExpandKeywords: true,
+    localVariations: true,
+    category: null,
+  });
+  assert.equal(normalizePreferences({ category: 'auto parts' }).category, 'auto parts');
 });
 
 test('parsePlan accepts fenced JSON and removes duplicate queries', () => {
@@ -40,6 +51,30 @@ test('planTelegramQueries asks provider and returns structured plan', async () =
   assert.equal(calls.length, 1);
   assert.equal(result.queries.length, 2);
   assert.equal(result.model, 'test-model');
+});
+
+test('planTelegramQueries keeps preferred languages while smart selection is enabled', async () => {
+  const calls = [];
+  const provider = {
+    async generate(input) {
+      calls.push(input);
+      return {
+        model: 'test-model',
+        text: JSON.stringify({
+          languages: ['uk', 'ru', 'en'],
+          queries: [
+            { language: 'uk', query: 'тканина гуртом' },
+            { language: 'ru', query: 'купить ткань оптом' },
+            { language: 'en', query: 'fabric supplier' },
+          ],
+        }),
+      };
+    },
+  };
+
+  await planTelegramQueries({ provider, goal: 'тканина', languages: ['uk', 'ru', 'auto'] });
+  assert.match(calls[0].instructions, /Always include these preferred language codes when useful: uk, ru/);
+  assert.match(calls[0].instructions, /practical search engine/);
 });
 
 test('runTelegramAiSearch dedupes messages across generated queries', async () => {
