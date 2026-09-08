@@ -1,0 +1,9 @@
+{
+  "name": "Astel Assistant",
+  "short_name": "Astel",
+  "description": "Visual command center for the Astel ecosystem",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7ff",
+  "theme_color": "#f5f7ff"
+}

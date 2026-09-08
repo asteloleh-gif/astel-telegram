@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const path = require("path");
 const { createTelegramAdapter } = require("./adapters/telegramAdapter");
 const { classifyTelegramMessage, buildNormalizedEvent } = require("./router/telegramRouter");
 const { loadPolicy } = require("./config/policy");
@@ -94,6 +95,7 @@ function createApp({
 
   const heartbeatKey = `${policy.redisNamespace}:health:heartbeat`;
   const app = express();
+  app.use(express.static(path.join(__dirname, "public")));
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/health", async (_req, res) => {
