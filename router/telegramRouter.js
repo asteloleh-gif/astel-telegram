@@ -18,4 +18,21 @@ function classifyTelegramMessage(message, { botUserId = null } = {}) {
   };
 }
 
-module.exports = { buildConversationKey, classifyTelegramMessage };
+function buildNormalizedEvent(message, { ownerUserId = null } = {}) {
+  if (!message) return null;
+  return {
+    platform: message.platform || "telegram",
+    traceId: message.traceId || null,
+    updateId: message.updateId || null,
+    userId: message.userId || null,
+    username: message.username || null,
+    conversationId: message.chatId || null,
+    messageId: message.messageId || null,
+    parentId: message.parentId || null,
+    threadId: message.threadId || null,
+    text: message.text || "",
+    isOwner: Boolean(ownerUserId && message.userId && String(ownerUserId) === String(message.userId)),
+  };
+}
+
+module.exports = { buildConversationKey, classifyTelegramMessage, buildNormalizedEvent };
