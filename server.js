@@ -22,6 +22,7 @@ const { createSkillRegistry } = require("./skills/skillRegistry");
 const { createAssistantPipeline } = require("./assistantPipeline");
 const { createTelegramWebAppGuard } = require("./setup/telegramWebAppGuard");
 const { createTelegramResearchProxy } = require("./setup/telegramResearchProxy");
+const { planTelegramQueries, runTelegramAiSearch } = require("./research/telegramAiSearch");
 
 function createApp({
   telegramAdapter,
@@ -193,6 +194,39 @@ function createApp({
       : undefined;
 
     await runTelegramSetupAction(res, () => telegramResearch.search({ query, periodHours, limit, sources }));
+  });
+
+  app.post("/api/telegram-research/ai-search", telegramSetupGuard, async (req, res) => {
+    const goal = String(req.body?.goal || "").trim();
+    if (!goal) return res.status(400).json({ error: "AI_SEARCH_GOAL_REQUIRED" });
+    if (goal.length > 500) return res.status(400).json({ error: "AI_SEARCH_GOAL_TOO_LONG" });
+
+    const requestedPeriodHours = Number(req.body?.periodHours || 168);
+    const requestedLimit = Number(req.body?.limit || 30);
+    const periodHours = Math.max(1, Math.min(24 * 365, Number.isFinite(requestedPeriodHours) ? requestedPeriodHours : 168));
+    const limit = Math.max(1, Math.min(50, Number.isFinite(requestedLimit) ? requestedLimit : 30));
+    const languages = Array.isArray(req.body?.languages) ? req.body.languages.slice(0, 6) : ["auto"];
+    const preview = Boolean(req.body?.preview);
+
+    if (preview) {
+      await runTelegramSetupAction(res, () => planTelegramQueries({
+        provider,
+        goal,
+        languages,
+        model: policy.openaiChatModel,
+      }));
+      return;
+    }
+
+    await runTelegramSetupAction(res, () => runTelegramAiSearch({
+      provider,
+      telegramResearch,
+      goal,
+      languages,
+      periodHours,
+      limit,
+      model: policy.openaiChatModel,
+    }));
   });
 
   app.post("/telegram/webhook", async (req, res) => {
