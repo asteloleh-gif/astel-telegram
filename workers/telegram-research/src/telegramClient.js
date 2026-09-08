@@ -35,6 +35,13 @@ function normalizeMessage(message, source, entity) {
   };
 }
 
+function detectEntityType(entity) {
+  const name = entity?.className || entity?.constructor?.name || "";
+  if (/channel/i.test(name)) return entity?.megagroup ? "group" : "channel";
+  if (/chat/i.test(name)) return "group";
+  return "unknown";
+}
+
 function createTelegramResearchClient(config) {
   let client = null;
   let connected = false;
@@ -97,6 +104,22 @@ function createTelegramResearchClient(config) {
     }
   }
 
+  async function inspectSource(source) {
+    const state = await connect();
+    if (!state.authorized) throw new Error(state.reason || "TELEGRAM_NOT_AUTHORIZED");
+    const entity = await client.getEntity(source);
+    if (!entity) throw new Error("TELEGRAM_SOURCE_NOT_FOUND");
+    const username = entity?.username || normalizeSourceUsername(source) || null;
+    return {
+      source: username ? `@${username}` : source,
+      title: entity?.title || entity?.firstName || username || source,
+      username,
+      chatId: entity?.id != null ? String(entity.id) : null,
+      type: detectEntityType(entity),
+      status: "connected",
+    };
+  }
+
   async function search({ query, sources, periodHours = 168, limit = 20 }) {
     if (!query || !String(query).trim()) throw new Error("SEARCH_QUERY_REQUIRED");
     const state = await connect();
@@ -156,7 +179,7 @@ function createTelegramResearchClient(config) {
     account = null;
   }
 
-  return { connect, status, search, disconnect, isConfigured };
+  return { connect, status, inspectSource, search, disconnect, isConfigured };
 }
 
-module.exports = { createTelegramResearchClient, normalizeMessage, toIsoDate };
+module.exports = { createTelegramResearchClient, normalizeMessage, toIsoDate, detectEntityType };

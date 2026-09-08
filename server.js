@@ -168,6 +168,18 @@ function createApp({
     await runTelegramSetupAction(res, () => telegramResearch.reset());
   });
 
+  app.get("/api/telegram-research/sources", telegramSetupGuard, async (_req, res) => {
+    await runTelegramSetupAction(res, () => telegramResearch.listSources());
+  });
+
+  app.post("/api/telegram-research/sources", telegramSetupGuard, async (req, res) => {
+    await runTelegramSetupAction(res, () => telegramResearch.addSource(req.body?.source));
+  });
+
+  app.delete("/api/telegram-research/sources/:source", telegramSetupGuard, async (req, res) => {
+    await runTelegramSetupAction(res, () => telegramResearch.deleteSource(req.params.source));
+  });
+
   app.post("/telegram/webhook", async (req, res) => {
     const expectedSecret = env.TELEGRAM_WEBHOOK_SECRET || "";
     const receivedSecret = req.get("x-telegram-bot-api-secret-token") || "";
