@@ -68,10 +68,10 @@ function createApp({
 
   const provider = aiProvider || createOpenAIProvider({
     apiKey: env.OPENAI_API_KEY,
-    model: policy.openaiModel,
-    reasoningEffort: policy.openaiReasoningEffort,
+    model: policy.openaiPowerModel,
+    reasoningEffort: policy.openaiPowerReasoningEffort,
     timeoutMs: policy.aiTimeoutMs,
-    maxOutputTokens: policy.aiMaxOutputTokens,
+    maxOutputTokens: policy.aiPowerMaxOutputTokens,
   });
   const engine = aiEngine || createAIEngine({ provider });
   const telegramPublisher = publisher || createTelegramPublisher({
@@ -82,8 +82,8 @@ function createApp({
   });
   const skills = skillRegistry || createSkillRegistry([
     createSystemSkill({ policy, conversationStore: memory, redisClient: redis }),
-    createResearchSkill({ provider, conversationStore: memory, logger: log }),
-    createAIChatSkill({ aiEngine: engine, conversationStore: memory, logger: log }),
+    createResearchSkill({ provider, conversationStore: memory, logger: log, policy }),
+    createAIChatSkill({ aiEngine: engine, conversationStore: memory, logger: log, policy }),
   ]);
   const assistant = assistantPipeline || createAssistantPipeline({
     skillRegistry: skills,
@@ -103,13 +103,16 @@ function createApp({
       ok: redisUp,
       service: "astel-telegram",
       product: "Astel Assistant",
-      version: "0.3.0",
+      version: "0.3.1",
       configured,
       botEnabled: policy.botEnabled,
       dryRun: policy.botDryRun,
       redisStatus: redisUp ? "up" : "down",
       aiProvider: policy.aiProvider,
-      aiModel: policy.openaiModel,
+      aiModels: {
+        chat: policy.openaiChatModel,
+        power: policy.openaiPowerModel,
+      },
       skills: skills.list(),
     });
   });
