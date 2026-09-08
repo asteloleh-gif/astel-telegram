@@ -24,8 +24,17 @@ const modules = [
 const quickActions = [
   { id: 'telegram-setup', title: 'Connect Telegram Research', subtitle: 'Authorize the read-only research account' },
   { id: 'find-lead', title: 'Find a lead', subtitle: 'Start a new lead search' },
-  { id: 'research-now', title: 'Research something', subtitle: 'Open a fresh research task' },
+  { id: 'research-now', title: 'Research something', subtitle: 'Open Telegram Research' },
 ];
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
 
 function moduleCard(item) {
   return `
@@ -96,10 +105,10 @@ function showSheet(title, text) {
   const backdrop = document.createElement('div');
   backdrop.className = 'sheet-backdrop';
   backdrop.innerHTML = `
-    <section class="sheet" role="dialog" aria-modal="true" aria-label="${title}">
+    <section class="sheet" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
       <div class="sheet__handle"></div>
-      <h3>${title}</h3>
-      <p>${text}</p>
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(text)}</p>
       <button class="sheet__close">Close</button>
     </section>`;
   document.body.appendChild(backdrop);
@@ -127,6 +136,18 @@ async function setupApi(path, { method = 'GET', body } = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error || `Setup failed (${response.status})`);
+  return payload;
+}
+
+async function sourceApi(path = '', { method = 'GET', body } = {}) {
+  if (!tg?.initData) throw new Error('Open Astel from the Telegram bot to manage sources.');
+  const response = await fetch(`/api/telegram-research/sources${path}`, {
+    method,
+    headers: setupHeaders(),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error || `Source request failed (${response.status})`);
   return payload;
 }
 
@@ -168,6 +189,125 @@ async function refreshSetupStatus() {
     showSetupStep('phone');
     setupMessage(error.message, 'is-error');
   }
+}
+
+function renderTelegramResearch() {
+  const app = document.querySelector('#app');
+  app.innerHTML = `
+    <div class="topbar">
+      <button class="topbar__back" data-home>‹ Home</button>
+      <span class="setup-badge">Read only</span>
+    </div>
+    <section class="setup-hero">
+      <span class="setup-hero__icon">${icon('search')}</span>
+      <h1>Telegram Research</h1>
+      <p>Manage where Astel reads Telegram data. Railway stays under the hood.</p>
+    </section>
+    <section class="quick-list">
+      <button class="quick-action" data-open-sources>
+        <span><strong>Sources</strong><span>Add or remove Telegram groups and channels</span></span>
+        <span class="quick-action__arrow">›</span>
+      </button>
+      <button class="quick-action" data-open-telegram-account>
+        <span><strong>Account</strong><span>Research account connection and authorization</span></span>
+        <span class="quick-action__arrow">›</span>
+      </button>
+      <button class="quick-action" data-collector-soon>
+        <span><strong>Group Collector</strong><span>Source discovery comes next</span></span>
+        <span class="quick-action__arrow">›</span>
+      </button>
+    </section>`;
+
+  document.querySelector('[data-home]').addEventListener('click', render);
+  document.querySelector('[data-open-sources]').addEventListener('click', renderTelegramSources);
+  document.querySelector('[data-open-telegram-account]').addEventListener('click', renderTelegramSetup);
+  document.querySelector('[data-collector-soon]').addEventListener('click', () => showSheet('Group Collector', 'Next module: discover and classify Telegram groups, then add selected sources into Research.'));
+}
+
+function renderSourceRows(sources) {
+  if (!sources.length) {
+    return '<p class="setup-footnote">No sources yet. Add a public @username or t.me link below.</p>';
+  }
+  return sources.map((item) => `
+    <div class="quick-action" style="cursor:default;align-items:center;">
+      <span style="min-width:0;">
+        <strong>${escapeHtml(item.title || item.source)}</strong>
+        <span>${escapeHtml(item.source)} · ${escapeHtml(item.type || 'telegram')} · ${escapeHtml(item.status || 'connected')}</span>
+      </span>
+      <button type="button" class="setup-secondary" style="width:auto;margin:0;padding:8px 12px;" data-delete-source="${escapeHtml(item.source)}">Delete</button>
+    </div>`).join('');
+}
+
+async function loadSources() {
+  const list = document.querySelector('#source-list');
+  if (!list) return;
+  list.innerHTML = '<p class="setup-footnote">Loading sources…</p>';
+  try {
+    const payload = await sourceApi();
+    list.innerHTML = renderSourceRows(payload.sources || []);
+    document.querySelector('#source-count').textContent = String(payload.count || 0);
+    list.querySelectorAll('[data-delete-source]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const source = button.dataset.deleteSource;
+        button.disabled = true;
+        try {
+          await sourceApi(`/${encodeURIComponent(source.replace(/^@/, ''))}`, { method: 'DELETE' });
+          setupMessage(`${source} removed.`, 'is-success');
+          await loadSources();
+        } catch (error) {
+          setupMessage(error.message, 'is-error');
+          button.disabled = false;
+        }
+      });
+    });
+  } catch (error) {
+    list.innerHTML = '';
+    setupMessage(error.message, 'is-error');
+  }
+}
+
+function renderTelegramSources() {
+  const app = document.querySelector('#app');
+  app.innerHTML = `
+    <div class="topbar">
+      <button class="topbar__back" data-research>‹ Research</button>
+      <span class="setup-badge"><span id="source-count">0</span> sources</span>
+    </div>
+    <section class="setup-hero">
+      <span class="setup-hero__icon">${icon('search')}</span>
+      <h1>Telegram Sources</h1>
+      <p>Add a public group or channel. Astel checks that the connected Research account can access it before saving.</p>
+    </section>
+    <section class="setup-card">
+      <div id="setup-message" class="setup-message"></div>
+      <form id="source-form">
+        <label for="source-input">Telegram group / channel</label>
+        <input id="source-input" type="text" autocomplete="off" placeholder="https://t.me/groupname or @groupname" required>
+        <small>Public usernames only in v1. Astel does not join groups or send messages.</small>
+        <button type="submit" class="setup-primary">Add source</button>
+      </form>
+    </section>
+    <section id="source-list" class="quick-list" style="margin-top:16px;"></section>
+    <p class="setup-footnote">Sources are stored on the persistent Research Worker volume, not in Railway environment variables.</p>`;
+
+  document.querySelector('[data-research]').addEventListener('click', renderTelegramResearch);
+  document.querySelector('#source-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setSetupBusy(true);
+    setupMessage('Checking source access…');
+    try {
+      const source = document.querySelector('#source-input').value.trim();
+      const result = await sourceApi('', { method: 'POST', body: { source } });
+      document.querySelector('#source-input').value = '';
+      setupMessage(result.created ? `${result.source.source} added.` : `${result.source.source} is already in Sources.`, 'is-success');
+      await loadSources();
+    } catch (error) {
+      setupMessage(error.message, 'is-error');
+    } finally {
+      setSetupBusy(false);
+    }
+  });
+  loadSources();
 }
 
 function renderTelegramSetup() {
@@ -214,6 +354,7 @@ function renderTelegramSetup() {
         <div class="setup-done__check">✓</div>
         <strong id="setup-account">Telegram account</strong>
         <span>Research worker connected</span>
+        <button type="button" class="setup-primary" data-open-sources>Manage Sources</button>
         <button type="button" class="setup-secondary" data-home>Back to Astel</button>
       </div>
     </section>
@@ -222,6 +363,7 @@ function renderTelegramSetup() {
   `;
 
   document.querySelectorAll('[data-home]').forEach((button) => button.addEventListener('click', render));
+  document.querySelector('[data-open-sources]').addEventListener('click', renderTelegramSources);
 
   document.querySelector('#phone-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -229,9 +371,9 @@ function renderTelegramSetup() {
     setupMessage('Sending code…');
     try {
       const phone = document.querySelector('#setup-phone').value.trim().replace(/[\s()-]/g, '');
-      await setupApi('begin', { method: 'POST', body: { phone } });
+      const delivery = await setupApi('begin', { method: 'POST', body: { phone } });
       showSetupStep('code');
-      setupMessage('Code sent. Check Telegram.', 'is-success');
+      setupMessage(delivery.viaApp ? 'Code sent inside Telegram on an already logged-in device.' : 'Code request accepted by Telegram. Check the delivery method available for this account.', 'is-success');
       document.querySelector('#setup-code').focus();
     } catch (error) {
       setupMessage(error.message, 'is-error');
@@ -254,7 +396,7 @@ function renderTelegramSetup() {
       } else {
         showSetupStep('done');
         document.querySelector('#setup-account').textContent = result.account?.username ? `@${result.account.username}` : (result.account?.firstName || 'Telegram account');
-        setupMessage('Connected. Session saved on Railway.', 'is-success');
+        setupMessage('Connected. Session saved privately.', 'is-success');
       }
     } catch (error) {
       setupMessage(error.message, 'is-error');
@@ -273,7 +415,7 @@ function renderTelegramSetup() {
       document.querySelector('#setup-password').value = '';
       showSetupStep('done');
       document.querySelector('#setup-account').textContent = result.account?.username ? `@${result.account.username}` : (result.account?.firstName || 'Telegram account');
-      setupMessage('Connected. Session saved on Railway.', 'is-success');
+      setupMessage('Connected. Session saved privately.', 'is-success');
     } catch (error) {
       document.querySelector('#setup-password').value = '';
       setupMessage(error.message, 'is-error');
@@ -305,6 +447,7 @@ function bindEvents() {
     button.addEventListener('click', () => {
       const item = modules.find((module) => module.id === button.dataset.module);
       if (item.id === 'settings') return renderTelegramSetup();
+      if (item.id === 'research') return renderTelegramResearch();
       showSheet(item.title, `${item.description}. This block is already modular — we can connect real functionality here without rebuilding the Home screen.`);
     });
   });
@@ -313,6 +456,7 @@ function bindEvents() {
     button.addEventListener('click', () => {
       const item = quickActions.find((action) => action.id === button.dataset.action);
       if (item.id === 'telegram-setup') return renderTelegramSetup();
+      if (item.id === 'research-now') return renderTelegramResearch();
       showSheet(item.title, `${item.subtitle}. Action wiring comes in the next implementation step.`);
     });
   });
