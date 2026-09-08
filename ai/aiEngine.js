@@ -21,8 +21,20 @@ function createAIEngine({ provider, instructions = DEFAULT_INSTRUCTIONS } = {}) 
     return lines.join("\n");
   }
 
-  async function generate({ history = [], text }) {
-    return provider.generate({ instructions, input: formatInput(history, text) });
+  async function generate({
+    history = [],
+    text,
+    model = null,
+    reasoningEffort = null,
+    maxOutputTokens = null,
+  }) {
+    return provider.generate({
+      instructions,
+      input: formatInput(history, text),
+      model,
+      reasoningEffort,
+      maxOutputTokens,
+    });
   }
 
   return { generate, formatInput };
