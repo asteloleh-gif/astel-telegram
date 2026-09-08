@@ -130,9 +130,9 @@ function createTelegramResearchClient(config) {
     for (const dialog of dialogs || []) {
       const entity = dialog?.entity || dialog;
       const type = detectEntityType(entity);
-      if (!['group', 'channel'].includes(type)) continue;
+      if (!["group", "channel"].includes(type)) continue;
       const username = entity?.username || null;
-      const title = dialog?.title || entity?.title || entity?.username || 'Telegram';
+      const title = dialog?.title || entity?.title || entity?.username || "Telegram";
       items.push({
         title,
         username,
@@ -142,8 +142,44 @@ function createTelegramResearchClient(config) {
       });
     }
 
-    items.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+    items.sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
     return { count: items.length, dialogs: items };
+  }
+
+  async function collectRecent({ sources, periodHours = 720, limitPerSource = 100 } = {}) {
+    const state = await connect();
+    if (!state.authorized) throw new Error(state.reason || "TELEGRAM_NOT_AUTHORIZED");
+    const selectedSources = (sources?.length ? sources : config.sources).slice(0, 50);
+    if (!selectedSources.length) throw new Error("NO_TELEGRAM_SOURCES_CONFIGURED");
+    const perSource = Math.max(1, Math.min(200, Number(limitPerSource) || 100));
+    const cutoff = Date.now() - Math.max(1, Number(periodHours) || 720) * 60 * 60 * 1000;
+    const results = [];
+    const errors = [];
+
+    for (const source of selectedSources) {
+      try {
+        const entity = await client.getEntity(source);
+        const messages = await client.getMessages(entity, { limit: perSource });
+        for (const message of messages || []) {
+          const item = normalizeMessage(message, source, entity);
+          if (!item.text || !item.chatUsername || !item.messageId) continue;
+          const ts = item.date ? new Date(item.date).getTime() : 0;
+          if (ts && ts < cutoff) continue;
+          results.push(item);
+        }
+      } catch (error) {
+        errors.push({ source, error: error?.message || String(error) });
+      }
+    }
+
+    results.sort((a, b) => new Date(b?.date || 0).getTime() - new Date(a?.date || 0).getTime());
+    return {
+      periodHours: Number(periodHours) || 720,
+      sources: selectedSources,
+      count: results.length,
+      results,
+      errors,
+    };
   }
 
   async function search({ query, sources, periodHours = 168, limit = 20 }) {
@@ -205,7 +241,7 @@ function createTelegramResearchClient(config) {
     account = null;
   }
 
-  return { connect, status, inspectSource, listDialogs, search, disconnect, isConfigured };
+  return { connect, status, inspectSource, listDialogs, collectRecent, search, disconnect, isConfigured };
 }
 
 module.exports = { createTelegramResearchClient, normalizeMessage, toIsoDate, detectEntityType };
