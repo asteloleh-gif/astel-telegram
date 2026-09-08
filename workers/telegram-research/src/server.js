@@ -2,10 +2,12 @@ const express = require("express");
 const { loadConfig } = require("./config");
 const { createTelegramResearchClient } = require("./telegramClient");
 const { createSetupAuth } = require("./setupAuth");
+const { createSourceStore } = require("./sourceStore");
 
 function createApp({ env = process.env } = {}) {
   const config = loadConfig(env);
   const telegram = createTelegramResearchClient(config);
+  const sourceStore = createSourceStore({ file: config.sourceFile, seedSources: config.sources });
   const setupAuth = createSetupAuth(config, {
     onSessionSaved: async () => telegram.disconnect(),
   });
@@ -17,7 +19,7 @@ function createApp({ env = process.env } = {}) {
   app.get("/", (_req, res) => {
     res.json({
       service: "astel-telegram-research-worker",
-      version: "0.2.0",
+      version: "0.3.0",
       mode: "read-only",
     });
   });
@@ -29,7 +31,7 @@ function createApp({ env = process.env } = {}) {
       ok: true,
       ready,
       service: "astel-telegram-research-worker",
-      version: "0.2.0",
+      version: "0.3.0",
       readOnly: true,
       telegram: {
         configured: state.configured,
@@ -37,7 +39,7 @@ function createApp({ env = process.env } = {}) {
         authorized: state.authorized,
         account: state.account,
       },
-      sourcesConfigured: config.sources.length,
+      sourcesConfigured: sourceStore.list().length,
     });
   });
 
@@ -94,7 +96,30 @@ function createApp({ env = process.env } = {}) {
   });
 
   app.get("/sources", (_req, res) => {
-    res.json({ count: config.sources.length, sources: config.sources });
+    const sources = sourceStore.list();
+    res.json({ count: sources.length, sources });
+  });
+
+  app.post("/sources", async (req, res) => {
+    try {
+      const raw = req.body?.source;
+      const normalized = sourceStore.normalizeSource(raw);
+      const inspected = await telegram.inspectSource(normalized);
+      const result = sourceStore.add(inspected);
+      res.status(result.created ? 201 : 200).json({ ok: true, created: result.created, source: result.item });
+    } catch (error) {
+      res.status(400).json({ error: error?.message || "TELEGRAM_SOURCE_ADD_FAILED" });
+    }
+  });
+
+  app.delete("/sources/:source", async (req, res) => {
+    try {
+      const removed = sourceStore.remove(req.params.source);
+      if (!removed) return res.status(404).json({ error: "TELEGRAM_SOURCE_NOT_FOUND" });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error?.message || "TELEGRAM_SOURCE_DELETE_FAILED" });
+    }
   });
 
   app.post("/search", async (req, res) => {
@@ -102,9 +127,12 @@ function createApp({ env = process.env } = {}) {
       const query = String(req.body?.query || "").trim();
       const periodHours = Number(req.body?.periodHours || 168);
       const limit = Number(req.body?.limit || 20);
-      const sources = Array.isArray(req.body?.sources)
+      const requestedSources = Array.isArray(req.body?.sources)
         ? req.body.sources.map((item) => String(item).trim()).filter(Boolean)
         : null;
+      const sources = requestedSources?.length
+        ? requestedSources
+        : sourceStore.list().map((item) => item.source);
 
       const result = await telegram.search({ query, periodHours, limit, sources });
       res.json(result);
@@ -119,17 +147,17 @@ function createApp({ env = process.env } = {}) {
     }
   });
 
-  return { app, config, telegram, setupAuth };
+  return { app, config, telegram, setupAuth, sourceStore };
 }
 
 async function start() {
-  const { app, config, telegram, setupAuth } = createApp();
+  const { app, config, telegram, setupAuth, sourceStore } = createApp();
   const server = app.listen(config.port, () => {
     console.log(JSON.stringify({
       event: "WORKER_STARTED",
       port: config.port,
       readOnly: true,
-      sourcesConfigured: config.sources.length,
+      sourcesConfigured: sourceStore.list().length,
     }));
   });
 
