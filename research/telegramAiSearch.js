@@ -1,3 +1,5 @@
+const { buildSmartMatch } = require("./keywordNormalizer");
+
 const LANGUAGE_LABELS = {
   uk: "Ukrainian",
   ru: "Russian",
@@ -66,10 +68,32 @@ function parsePlan(text) {
   };
 }
 
+function parseSmartSeeds(goal) {
+  const raw = String(goal || "").trim();
+  try {
+    const value = JSON.parse(raw);
+    return Array.isArray(value) ? value : [];
+  } catch (_error) {
+    return raw.split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean);
+  }
+}
+
 async function planTelegramQueries({ provider, goal, languages = ["auto"], preferences = {}, model = null } = {}) {
   if (!provider?.generate) throw new Error("AI_PROVIDER_REQUIRED");
   const normalizedGoal = String(goal || "").trim();
   if (!normalizedGoal) throw new Error("AI_SEARCH_GOAL_REQUIRED");
+
+  if (Array.isArray(languages) && languages.map((item) => String(item || "").toLowerCase()).includes("smart-match")) {
+    const match = await buildSmartMatch({ provider, keywords: parseSmartSeeds(normalizedGoal), model });
+    return {
+      goal: normalizedGoal,
+      languages: [],
+      queries: match.searchKeywords.map((query) => ({ language: "smart", query })),
+      items: match.items,
+      searchKeywords: match.searchKeywords,
+      model: match.model,
+    };
+  }
 
   const requested = normalizeLanguages(languages);
   const prefs = normalizePreferences(preferences);
