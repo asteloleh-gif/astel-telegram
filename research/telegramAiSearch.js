@@ -20,6 +20,17 @@ function normalizeLanguages(value) {
   return normalized.length ? normalized.slice(0, 6) : ["auto"];
 }
 
+function normalizePreferences(value = {}) {
+  const raw = value && typeof value === "object" ? value : {};
+  const category = String(raw.category || "").trim().slice(0, 80);
+  return {
+    smartLanguageSelection: raw.smartLanguageSelection !== false,
+    autoExpandKeywords: raw.autoExpandKeywords !== false,
+    localVariations: raw.localVariations !== false,
+    category: category && category !== "auto" ? category : null,
+  };
+}
+
 function stripCodeFence(text) {
   const value = String(text || "").trim();
   if (!value.startsWith("```")) return value;
@@ -55,25 +66,47 @@ function parsePlan(text) {
   };
 }
 
-async function planTelegramQueries({ provider, goal, languages = ["auto"], model = null } = {}) {
+async function planTelegramQueries({ provider, goal, languages = ["auto"], preferences = {}, model = null } = {}) {
   if (!provider?.generate) throw new Error("AI_PROVIDER_REQUIRED");
   const normalizedGoal = String(goal || "").trim();
   if (!normalizedGoal) throw new Error("AI_SEARCH_GOAL_REQUIRED");
 
   const requested = normalizeLanguages(languages);
-  const languageInstruction = requested.includes("auto")
-    ? "Choose 3-5 useful languages for this goal from: uk, ru, en, pl, de, zh."
-    : `Use only these language codes: ${requested.join(", ")}.`;
+  const prefs = normalizePreferences(preferences);
+  const explicit = requested.filter((item) => item !== "auto");
+  const useSmartLanguages = requested.includes("auto") || prefs.smartLanguageSelection;
+  let languageInstruction;
+  if (useSmartLanguages && explicit.length) {
+    languageInstruction = `Always include these preferred language codes when useful: ${explicit.join(", ")}. You may add up to 3 other useful languages from uk, ru, en, pl, de, zh when the goal clearly benefits from them.`;
+  } else if (useSmartLanguages) {
+    languageInstruction = "Choose 2-4 useful languages for this goal from: uk, ru, en, pl, de, zh.";
+  } else {
+    languageInstruction = `Use only these language codes: ${(explicit.length ? explicit : ["uk", "ru"]).join(", ")}.`;
+  }
+
+  const expansionInstruction = prefs.autoExpandKeywords
+    ? "Expand the user's topic like a practical search engine: generate different lexical angles such as buy/need/looking for, supplier/wholesale/manufacturer, service/request, product synonyms and common word order variants when relevant. Do not merely translate the same phrase."
+    : "Stay close to the user's wording and generate only direct lexical variants; do not broaden the topic.";
+  const localInstruction = prefs.localVariations
+    ? "Use wording people actually type in Telegram groups and chats, including short colloquial phrasing, common abbreviations and local variants when natural."
+    : "Prefer neutral standard wording; avoid slang and local abbreviations.";
+  const categoryInstruction = prefs.category
+    ? `Business context/category: ${prefs.category}. Use this only to disambiguate the user's topic and improve query relevance.`
+    : "Infer the business context from the user's topic without inventing a niche that is not implied.";
 
   const response = await provider.generate({
     model,
     reasoningEffort: "low",
     maxOutputTokens: 900,
     instructions: [
-      "You build concise Telegram keyword searches for business research.",
-      "Telegram search is lexical, so produce phrases people are likely to actually write in messages.",
-      "Include synonyms and intent phrases where useful, not long natural-language questions.",
-      "Generate at most 2 strong queries per language and no more than 12 total.",
+      "You generate high-signal lexical search phrases for Telegram business research.",
+      "Telegram message search is keyword-based, so every query must look like text a real person would actually write in a group or chat.",
+      expansionInstruction,
+      localInstruction,
+      categoryInstruction,
+      "For a short noun/topic such as 'fabric', include realistic intent variants rather than only repeating the noun.",
+      "Prefer concise phrases of roughly 1-6 words. Avoid long natural-language questions and marketing copy.",
+      "Generate up to 12 distinct high-value queries total, usually 2-4 per important language.",
       languageInstruction,
       "Return JSON only, no markdown: {\"languages\":[\"uk\"],\"queries\":[{\"language\":\"uk\",\"query\":\"...\"}]}",
     ].join("\n"),
@@ -99,12 +132,13 @@ async function runTelegramAiSearch({
   telegramResearch,
   goal,
   languages = ["auto"],
+  preferences = {},
   periodHours = 168,
   limit = 30,
   model = null,
 } = {}) {
   if (!telegramResearch?.search) throw new Error("TELEGRAM_RESEARCH_REQUIRED");
-  const plan = await planTelegramQueries({ provider, goal, languages, model });
+  const plan = await planTelegramQueries({ provider, goal, languages, preferences, model });
   const finalLimit = Math.max(1, Math.min(50, Number(limit) || 30));
   const perQueryLimit = Math.max(4, Math.min(10, Math.ceil(finalLimit / Math.max(1, plan.queries.length)) + 2));
   const merged = new Map();
@@ -156,6 +190,7 @@ async function runTelegramAiSearch({
 module.exports = {
   LANGUAGE_LABELS,
   normalizeLanguages,
+  normalizePreferences,
   parsePlan,
   planTelegramQueries,
   runTelegramAiSearch,
