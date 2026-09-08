@@ -19,7 +19,7 @@ function createApp({ env = process.env } = {}) {
   app.get("/", (_req, res) => {
     res.json({
       service: "astel-telegram-research-worker",
-      version: "0.3.0",
+      version: "0.4.0",
       mode: "read-only",
     });
   });
@@ -31,7 +31,7 @@ function createApp({ env = process.env } = {}) {
       ok: true,
       ready,
       service: "astel-telegram-research-worker",
-      version: "0.3.0",
+      version: "0.4.0",
       readOnly: true,
       telegram: {
         configured: state.configured,
@@ -119,6 +119,29 @@ function createApp({ env = process.env } = {}) {
       res.json({ ok: true });
     } catch (error) {
       res.status(400).json({ error: error?.message || "TELEGRAM_SOURCE_DELETE_FAILED" });
+    }
+  });
+
+  app.get("/dialogs", async (req, res) => {
+    try {
+      const limit = Math.max(1, Math.min(250, Number(req.query?.limit || 120)));
+      const payload = await telegram.listDialogs({ limit });
+      const added = new Set(sourceStore.list().map((item) => String(item.source || "").toLocaleLowerCase()));
+      res.json({
+        count: payload.count,
+        dialogs: payload.dialogs.map((item) => ({
+          ...item,
+          added: Boolean(item.source && added.has(String(item.source).toLocaleLowerCase())),
+        })),
+      });
+    } catch (error) {
+      const code = error?.message || "TELEGRAM_DIALOGS_FAILED";
+      const status = [
+        "TELEGRAM_SESSION_MISSING",
+        "TELEGRAM_SESSION_UNAUTHORIZED",
+        "TELEGRAM_NOT_AUTHORIZED",
+      ].includes(code) ? 503 : 400;
+      res.status(status).json({ error: code });
     }
   });
 
