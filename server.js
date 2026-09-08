@@ -181,6 +181,12 @@ function createApp({
     await runTelegramSetupAction(res, () => telegramResearch.deleteSource(req.params.source));
   });
 
+  app.get("/api/telegram-research/dialogs", telegramSetupGuard, async (req, res) => {
+    const requestedLimit = Number(req.query?.limit || 120);
+    const limit = Math.max(1, Math.min(250, Number.isFinite(requestedLimit) ? requestedLimit : 120));
+    await runTelegramSetupAction(res, () => telegramResearch.listDialogs({ limit }));
+  });
+
   app.post("/api/telegram-research/search", telegramSetupGuard, async (req, res) => {
     const query = String(req.body?.query || "").trim();
     if (!query) return res.status(400).json({ error: "SEARCH_QUERY_REQUIRED" });
