@@ -32,6 +32,8 @@ function createSystemSkill({ policy, conversationStore, redisClient } = {}) {
         "Astel Assistant готов.",
         "Пиши обычным сообщением — отвечу через AI.",
         "",
+        "/research <запрос> — свежий веб-ресерч",
+        "/leads <что искать> — публичные B2B лиды",
         "/status — статус",
         "/reset — очистить память диалога",
         "/help — помощь",
