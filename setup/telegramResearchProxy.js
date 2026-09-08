@@ -44,6 +44,14 @@ function createTelegramResearchProxy({ baseUrl, workerApiKey, timeoutMs = 15000 
     addSource: (source) => request("/sources", { method: "POST", body: { source } }),
     deleteSource: (source) => request(`/sources/${encodeURIComponent(String(source || "").replace(/^@/, ""))}`, { method: "DELETE" }),
     listDialogs: ({ limit = 120 } = {}) => request(`/dialogs?limit=${encodeURIComponent(String(limit))}`),
+    collect: ({ periodHours = 720, limitPerSource = 100, sources } = {}) => request("/collect", {
+      method: "POST",
+      body: {
+        periodHours,
+        limitPerSource,
+        ...(Array.isArray(sources) && sources.length ? { sources } : {}),
+      },
+    }),
     search: ({ query, periodHours, limit, sources } = {}) => request("/search", {
       method: "POST",
       body: {
