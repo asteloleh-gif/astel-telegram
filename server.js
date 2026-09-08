@@ -180,6 +180,21 @@ function createApp({
     await runTelegramSetupAction(res, () => telegramResearch.deleteSource(req.params.source));
   });
 
+  app.post("/api/telegram-research/search", telegramSetupGuard, async (req, res) => {
+    const query = String(req.body?.query || "").trim();
+    if (!query) return res.status(400).json({ error: "SEARCH_QUERY_REQUIRED" });
+
+    const requestedPeriodHours = Number(req.body?.periodHours || 168);
+    const requestedLimit = Number(req.body?.limit || 20);
+    const periodHours = Math.max(1, Math.min(24 * 365, Number.isFinite(requestedPeriodHours) ? requestedPeriodHours : 168));
+    const limit = Math.max(1, Math.min(50, Number.isFinite(requestedLimit) ? requestedLimit : 20));
+    const sources = Array.isArray(req.body?.sources)
+      ? req.body.sources.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 50)
+      : undefined;
+
+    await runTelegramSetupAction(res, () => telegramResearch.search({ query, periodHours, limit, sources }));
+  });
+
   app.post("/telegram/webhook", async (req, res) => {
     const expectedSecret = env.TELEGRAM_WEBHOOK_SECRET || "";
     const receivedSecret = req.get("x-telegram-bot-api-secret-token") || "";
