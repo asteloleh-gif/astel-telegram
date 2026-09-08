@@ -3,7 +3,7 @@
 ## Product
 
 `astel-telegram` is the Telegram client for **Astel Assistant**, a private owner-only AI assistant.
-Telegram is the first interface. New business capabilities should be added as isolated skills, not baked into the transport layer.
+Telegram is the first interface. New business capabilities are added as isolated skills, not baked into the transport layer.
 
 ## Invariant
 
@@ -18,7 +18,9 @@ Telegram Update
   -> Owner Guard
   -> Redis Safety (dedupe -> reservation -> cooldown)
   -> Skill Registry
-       -> system skill OR ai-chat skill
+       -> system
+       -> research / lead hunter
+       -> ai-chat
   -> Publisher
   -> Telegram sendMessage
   -> commit assistant memory only after confirmed publish
@@ -54,25 +56,28 @@ Assistant messages are persisted only after Telegram confirms publication.
 
 ## AI
 
-The first provider is OpenAI via the Responses API. Provider details stay outside the Telegram adapter.
+The provider is OpenAI via the Responses API. Provider details stay outside the Telegram adapter.
 The model, reasoning effort, timeout, and output budget are environment-configurable.
+
+The research skill can opt into OpenAI-hosted web search per request. Web search is not enabled for every chat message, which keeps cost and behavior bounded.
 
 ## Skills
 
-The initial registry has two concrete skills:
+The registry currently has three concrete skills:
 
 - `system`: `/start`, `/help`, `/status`, `/reset`
+- `research`: `/research <query>`, `/leads <query>`
 - `ai-chat`: default free-form assistant chat
 
-This is intentionally minimal. New capabilities (lead hunter, supplier research, GitHub, CRM, etc.) can be registered later without moving Telegram I/O or Redis safety logic into the skill itself.
+`/leads` is limited to lawful public B2B research. It is instructed not to use private/gated data or invent contacts, and uses a hard per-response tool-call cap.
 
 ## Runtime gates
 
 - `BOT_ENABLED=false` prevents publishing.
 - `BOT_DRY_RUN=true` logs reply candidates without sending.
-- Live mode requires explicit enablement after staging tests.
+- Live mode should be enabled only after CI and staging checks pass.
 
 ## Deployment
 
 Target: separate Railway service and separate Redis state from Threads production.
-Do not modify `threads-bot` as part of this repository.
+The production service is `astel-assistant`; Threads remains a separate project/service.
