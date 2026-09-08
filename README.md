@@ -1,44 +1,54 @@
-# Astel Telegram
+# Astel Assistant
 
-Standalone Telegram project built on the proven Astel Reply Engine patterns, but without Meta/Threads-specific code.
+Private owner-only Telegram client for **Astel Assistant**.
 
-## Goal
+## Current capabilities — v0.3.0
 
-Build a self-hosted Telegram AI assistant with:
+- Telegram Bot API webhook client
+- owner-only access control
+- Redis-backed dedupe, reservation/idempotency and cooldown safety
+- short-term Redis conversation memory
+- OpenAI Responses API chat
+- `/research <query>` for fresh web research
+- `/leads <query>` for public B2B lead research
+- `/status`, `/reset`, `/help`
+- Railway deployment with healthcheck and webhook auto-registration
 
-- Telegram Bot API adapter
-- Redis-backed dedupe/idempotency/cooldowns
-- short-term conversation memory
-- human takeover lock
-- configurable reply policy
-- AI usage telemetry
-- Railway-friendly deployment
-
-## Architecture
+## Pipeline
 
 ```text
 Telegram Update
-    ↓
-Telegram Adapter
-    ↓
-Telegram Router / Policy
-    ↓
-Safety + Memory
-    ↓
-AI Engine
-    ↓
-Telegram sendMessage
-    ↓
-Redis / Logs
+  -> normalize
+  -> owner guard
+  -> Redis safety
+  -> skill registry
+       -> system
+       -> research / lead hunter
+       -> ai-chat
+  -> Telegram publisher
+  -> confirmed-publish memory commit
 ```
 
-## Status
+The main invariant is:
 
-Initial project scaffold. Core modules are intentionally platform-independent. Threads/Meta-specific token management, Graph API routing, target_id logic, and UNKNOWN_PARENT handling are not included.
+> ONE TELEGRAM SOURCE MESSAGE → MAXIMUM ONE AUTOMATIC PUBLISHED REPLY
+
+## Research / Lead Hunter
+
+Examples:
+
+```text
+/research последние изменения пошлин США на автозапчасти
+/leads покупатели carbon fiber auto parts в США
+```
+
+Research uses OpenAI-hosted web search. Lead Hunter is restricted to lawful public information and is instructed not to invent contacts or use gated/private data.
 
 ## Environment
 
-Copy `.env.example` and provide real secrets only in your hosting environment. Never commit tokens.
+Copy `.env.example` and provide real secrets only in the hosting environment. Never commit tokens.
+
+Required live secrets/config include `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_ID`, `OPENAI_API_KEY`, `REDIS_URL`, `PUBLIC_BASE_URL`, and `TELEGRAM_WEBHOOK_SECRET`.
 
 ## Run
 
@@ -47,3 +57,5 @@ npm install
 npm test
 npm start
 ```
+
+See `docs/ARCHITECTURE.md` for the safety and memory design.
