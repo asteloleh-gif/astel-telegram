@@ -82,7 +82,12 @@ function createApp({
     policy,
   });
   const skills = skillRegistry || createSkillRegistry([
-    createSystemSkill({ policy, conversationStore: memory, redisClient: redis }),
+    createSystemSkill({
+      policy,
+      conversationStore: memory,
+      redisClient: redis,
+      miniAppUrl: env.MINI_APP_URL || env.PUBLIC_BASE_URL || "",
+    }),
     createResearchSkill({ provider, conversationStore: memory, logger: log, policy }),
     createAIChatSkill({ aiEngine: engine, conversationStore: memory, logger: log, policy }),
   ]);
