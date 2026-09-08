@@ -10,7 +10,7 @@ Do not invent contacts. Prefer actual buyer intent, RFQs, procurement notices, c
 For each lead give: name/company, what they appear to need, why it matches, confidence (high/medium/low), and a public source.
 Return at most 8 strong leads; quality beats quantity. Answer in the same language as the user's request and keep it concise enough for one Telegram message.`;
 
-function createResearchSkill({ provider, conversationStore, logger } = {}) {
+function createResearchSkill({ provider, conversationStore, logger, policy } = {}) {
   if (!provider?.generate) throw new Error("researchSkill requires provider.generate");
 
   function parse(event) {
@@ -48,6 +48,9 @@ function createResearchSkill({ provider, conversationStore, logger } = {}) {
     const generated = await provider.generate({
       instructions: isLead ? LEAD_INSTRUCTIONS : RESEARCH_INSTRUCTIONS,
       input: parsed.query,
+      model: policy?.openaiPowerModel || "gpt-5.6-terra",
+      reasoningEffort: policy?.openaiPowerReasoningEffort || "medium",
+      maxOutputTokens: policy?.aiPowerMaxOutputTokens || 1600,
       tools: [{ type: "web_search_preview", search_context_size: "medium" }],
       include: ["web_search_call.action.sources"],
       maxToolCalls: 3,
@@ -66,6 +69,7 @@ function createResearchSkill({ provider, conversationStore, logger } = {}) {
       userId: event.userId,
       extra: {
         model: generated.model,
+        mode: "power",
         responseId: generated.responseId,
         sourceCount: generated.sources?.length || 0,
         usage: generated.usage,

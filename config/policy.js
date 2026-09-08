@@ -15,6 +15,16 @@ function loadPolicy(env = process.env) {
     return raw == null || raw === "" ? fallback : raw;
   };
 
+  const powerModel = readString("OPENAI_POWER_MODEL", readString("OPENAI_MODEL", "gpt-5.6-terra"));
+  const chatModel = readString("OPENAI_CHAT_MODEL", "gpt-5.6-luna");
+  const powerReasoning = readString(
+    "OPENAI_POWER_REASONING_EFFORT",
+    readString("OPENAI_REASONING_EFFORT", "medium")
+  );
+  const chatReasoning = readString("OPENAI_CHAT_REASONING_EFFORT", "low");
+  const powerMaxOutput = readInt("AI_POWER_MAX_OUTPUT_TOKENS", readInt("AI_MAX_OUTPUT_TOKENS", 1600, 64), 64);
+  const chatMaxOutput = readInt("AI_CHAT_MAX_OUTPUT_TOKENS", 700, 64);
+
   return Object.freeze({
     ownerUserId: readString("TELEGRAM_OWNER_ID", ""),
     normalReplyLimit: readInt("NORMAL_REPLY_LIMIT", 3, 1),
@@ -32,10 +42,17 @@ function loadPolicy(env = process.env) {
     memoryMaxMessages: readInt("MEMORY_MAX_MESSAGES", 12, 2),
     memoryMaxTokens: readInt("MEMORY_MAX_TOKENS", 3000, 256),
     aiProvider: readString("AI_PROVIDER", "openai"),
-    openaiModel: readString("OPENAI_MODEL", "gpt-5.6-terra"),
-    openaiReasoningEffort: readString("OPENAI_REASONING_EFFORT", "medium"),
+    // Backward-compatible aliases point to the power tier.
+    openaiModel: powerModel,
+    openaiReasoningEffort: powerReasoning,
+    aiMaxOutputTokens: powerMaxOutput,
+    openaiChatModel: chatModel,
+    openaiPowerModel: powerModel,
+    openaiChatReasoningEffort: chatReasoning,
+    openaiPowerReasoningEffort: powerReasoning,
+    aiChatMaxOutputTokens: chatMaxOutput,
+    aiPowerMaxOutputTokens: powerMaxOutput,
     aiTimeoutMs: readInt("AI_TIMEOUT_MS", 45000, 1000),
-    aiMaxOutputTokens: readInt("AI_MAX_OUTPUT_TOKENS", 1600, 64),
     botEnabled: readBool("BOT_ENABLED", false),
     botDryRun: readBool("BOT_DRY_RUN", true),
   });
