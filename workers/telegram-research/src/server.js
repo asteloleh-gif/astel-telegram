@@ -20,9 +20,10 @@ function createApp({ env = process.env } = {}) {
 
   app.get("/health", async (_req, res) => {
     const state = await telegram.status();
-    const ok = Boolean(state.configured && state.connected && state.authorized);
-    res.status(ok ? 200 : 503).json({
-      ok,
+    const ready = Boolean(state.configured && state.connected && state.authorized);
+    res.status(200).json({
+      ok: true,
+      ready,
       service: "astel-telegram-research-worker",
       version: "0.1.0",
       readOnly: true,
