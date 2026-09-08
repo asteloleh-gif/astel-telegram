@@ -10,6 +10,14 @@
     return { accept: 'application/json', 'content-type': 'application/json', 'x-telegram-init-data': tg?.initData || '' };
   }
 
+  async function apiGet(path) {
+    if (!tg?.initData) throw new Error('Open Astel from the Telegram bot to use Telegram Research.');
+    const response = await fetch(path, { method: 'GET', headers: headers() });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error || `Request failed (${response.status})`);
+    return payload;
+  }
+
   async function apiPost(path, body) {
     if (!tg?.initData) throw new Error('Open Astel from the Telegram bot to use Telegram Research.');
     const response = await fetch(path, { method: 'POST', headers: headers(), body: JSON.stringify(body || {}) });
@@ -130,7 +138,7 @@
       .ks-wrap{padding-bottom:150px}.ks-card{background:rgba(255,255,255,.94);border:1px solid rgba(24,34,62,.08);border-radius:24px;padding:20px;margin-bottom:16px;box-shadow:0 14px 35px rgba(70,92,140,.08)}
       .ks-info{background:#f3f7ff;border-radius:20px;padding:15px 16px;margin-bottom:16px;color:#687690;line-height:1.45}.ks-info strong{display:block;color:#17213c;margin-bottom:4px}
       .ks-textarea{width:100%;min-height:118px;box-sizing:border-box;border:1px solid rgba(21,31,57,.14);border-radius:18px;padding:15px 16px;font:inherit;line-height:1.4;background:#fff;color:#11182e;outline:none}
-      .ks-textarea:focus,.ks-select:focus{border-color:rgba(41,124,255,.55);box-shadow:0 0 0 3px rgba(41,124,255,.09)}
+      .ks-textarea:focus,.ks-select:focus,.collector-search:focus{border-color:rgba(41,124,255,.55);box-shadow:0 0 0 3px rgba(41,124,255,.09)}
       .ks-preview,.ks-examples,.ks-tags,.ks-actions{display:flex;flex-wrap:wrap;gap:7px}.ks-preview{margin-top:11px}.ks-examples{margin-top:12px}
       .ks-chip,.ks-example,.ks-tag{border:0;border-radius:999px;padding:7px 10px;font:inherit;font-size:12px}.ks-chip{background:#eaf2ff;color:#315a92}.ks-example,.ks-tag{background:#f0f3f8;color:#66738b}.ks-chip b{margin-left:6px;opacity:.65}
       .ks-primary{width:100%;border:0;border-radius:18px;padding:15px 16px;background:#11162e;color:#fff;font:inherit;font-weight:800;margin-top:14px}.ks-primary:disabled{opacity:.5}
@@ -139,6 +147,7 @@
       .ks-secondary{border:0;border-radius:14px;padding:10px 13px;background:#edf2fb;color:#42516c;font:inherit;font-weight:700}.ks-link{border:0;background:transparent;color:#1675ff;font:inherit;font-weight:750}
       .ks-smart-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:13px 0 2px;border-top:1px solid rgba(24,34,62,.08)}.ks-smart-row small{display:block;color:#7a879f;margin-top:3px}.ks-switch{position:relative;width:48px;height:29px;flex:0 0 auto}.ks-switch input{opacity:0;width:0;height:0}.ks-switch span{position:absolute;inset:0;background:#dfe5ef;border-radius:999px}.ks-switch span:after{content:'';position:absolute;width:23px;height:23px;top:3px;left:3px;background:#fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,.14);transition:.18s}.ks-switch input:checked+span{background:#1684ff}.ks-switch input:checked+span:after{transform:translateX(19px)}
       .ks-smart-plan{margin-top:12px;padding:12px 13px;border-radius:16px;background:#f8f9fc;color:#66738b;font-size:13px;line-height:1.45}.ks-smart-plan strong{color:#2d3953}
+      .collector-toolbar{display:grid;grid-template-columns:1fr auto;gap:9px;margin-bottom:12px}.collector-search{width:100%;box-sizing:border-box;border:1px solid rgba(21,31,57,.14);border-radius:16px;padding:13px 14px;background:#fff;font:inherit;color:#11182e;outline:none}.collector-filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}.collector-filter{border:0;border-radius:999px;padding:8px 11px;background:#edf2fb;color:#5d6b83;font:inherit;font-size:12px;font-weight:700}.collector-filter.on{background:#11162e;color:white}.collector-item{background:rgba(255,255,255,.95);border:1px solid rgba(24,34,62,.08);border-radius:20px;padding:15px;margin:9px 0}.collector-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.collector-title{min-width:0}.collector-title strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.collector-title small{display:block;color:#7a879f;margin-top:4px}.collector-badge{flex:0 0 auto;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:800;background:#eef3fb;color:#66738b}.collector-badge.added{background:#e9f8f0;color:#148154}.collector-action{width:100%;margin-top:11px;border:0;border-radius:14px;padding:11px 13px;font:inherit;font-weight:800;background:#edf3ff;color:#2269c8}.collector-action:disabled{background:#f1f3f6;color:#929bad}.collector-summary{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 15px}.collector-stat{padding:8px 11px;border-radius:999px;background:#f0f3f8;color:#66738b;font-size:12px;font-weight:700}
       .ks-nav{position:sticky;bottom:0;display:grid;grid-template-columns:repeat(4,1fr);margin:26px -4px -4px;padding:10px 8px calc(10px + env(safe-area-inset-bottom));background:rgba(248,250,255,.97);backdrop-filter:blur(18px);border-top:1px solid rgba(24,34,62,.08);z-index:10}.ks-nav button{border:0;background:transparent;color:#7b88a0;padding:6px 2px;font:inherit;font-size:11px;font-weight:700}.ks-nav button span{display:block;font-size:19px;margin-bottom:3px}.ks-nav .on{color:#157cff}.ks-select{width:100%;border:1px solid rgba(21,31,57,.14);border-radius:16px;padding:13px 14px;background:#fff;font:inherit;color:#11182e}
     `;
     document.head.appendChild(style);
@@ -148,7 +157,7 @@
     return `<nav class="ks-nav">
       <button class="${active === 'search' ? 'on' : ''}" data-ks-nav="search"><span>⌕</span>Search</button>
       <button class="${active === 'sources' ? 'on' : ''}" data-ks-nav="sources"><span>▦</span>Sources</button>
-      <button data-ks-nav="collector"><span>♧</span>Collector</button>
+      <button class="${active === 'collector' ? 'on' : ''}" data-ks-nav="collector"><span>♧</span>Collector</button>
       <button class="${active === 'settings' ? 'on' : ''}" data-ks-nav="settings"><span>⚙</span>Settings</button>
     </nav>`;
   }
@@ -159,7 +168,7 @@
       if (target === 'search') return renderSearch();
       if (target === 'sources') return window.renderTelegramSources?.();
       if (target === 'settings') return renderSettings();
-      window.showSheet?.('Group Collector', 'Next module: collect and classify Telegram groups, then add selected groups into Sources.');
+      if (target === 'collector') return renderCollector();
     }));
   }
 
@@ -258,15 +267,92 @@
     app.querySelector('[data-back]').addEventListener('click', renderSearch); bindNav(app); app.querySelector('[data-save]').addEventListener('click', () => { const saved = saveSettings(app.querySelector('#ks-period').value, app.querySelector('#ks-setting-smart').checked); app.querySelector('#ks-save').textContent = `Saved: ${periodLabel(saved.periodHours)} · Smart Match ${saved.smartMatching ? 'ON' : 'OFF'}.`; });
   }
 
+  function collectorCard(item, index) {
+    const handle = item.username ? `@${item.username}` : 'Private / no public username';
+    const badge = item.added ? '<span class="collector-badge added">Added</span>' : `<span class="collector-badge">${esc(item.type || 'chat')}</span>`;
+    let action;
+    if (item.added) action = '<button class="collector-action" disabled>✓ Already in Sources</button>';
+    else if (item.public && item.source) action = `<button class="collector-action" data-collector-add="${esc(item.source)}" data-collector-index="${index}">+ Add to Sources</button>`;
+    else action = '<button class="collector-action" disabled>Private source · not supported yet</button>';
+    return `<article class="collector-item" data-collector-card data-title="${esc(String(item.title || '').toLocaleLowerCase())}" data-user="${esc(String(item.username || '').toLocaleLowerCase())}" data-added="${item.added ? '1' : '0'}" data-public="${item.public ? '1' : '0'}">
+      <div class="collector-top"><div class="collector-title"><strong>${esc(item.title || item.source || 'Telegram')}</strong><small>${esc(handle)}</small></div>${badge}</div>${action}</article>`;
+  }
+
+  async function renderCollector() {
+    styles(); const app = document.querySelector('#app'); if (!app) return;
+    app.innerHTML = `<div class="ks-wrap"><div class="topbar"><button class="topbar__back" data-back>‹ Research</button><span class="setup-badge">Read only</span></div>
+      <section class="setup-hero" style="padding-bottom:10px"><span class="setup-hero__icon">♧</span><h1>Group Collector</h1><p>Groups and channels already visible to your Research account.</p></section>
+      <div class="ks-info"><strong>My Groups</strong>Astel does not join anything automatically. Public groups can be added to Sources with one tap. Private groups are shown for visibility only.</div>
+      <section class="ks-card"><div id="collector-status" class="ks-status ks-loading">Loading Telegram dialogs…</div>
+        <div class="collector-toolbar"><input id="collector-search" class="collector-search" placeholder="Search groups…" autocomplete="off"><button class="ks-secondary" data-refresh>Refresh</button></div>
+        <div class="collector-filters"><button class="collector-filter on" data-filter="all">All</button><button class="collector-filter" data-filter="public">Public</button><button class="collector-filter" data-filter="added">Added</button></div>
+        <div id="collector-summary" class="collector-summary"></div><div id="collector-list"></div></section>${nav('collector')}</div>`;
+    app.querySelector('[data-back]').addEventListener('click', renderHub); bindNav(app);
+
+    let dialogs = [];
+    let activeFilter = 'all';
+    const status = app.querySelector('#collector-status');
+    const list = app.querySelector('#collector-list');
+    const summary = app.querySelector('#collector-summary');
+    const search = app.querySelector('#collector-search');
+
+    function draw() {
+      const term = search.value.trim().toLocaleLowerCase();
+      const filtered = dialogs.filter((item) => {
+        if (activeFilter === 'public' && !item.public) return false;
+        if (activeFilter === 'added' && !item.added) return false;
+        if (!term) return true;
+        return String(item.title || '').toLocaleLowerCase().includes(term) || String(item.username || '').toLocaleLowerCase().includes(term);
+      });
+      const publicCount = dialogs.filter((item) => item.public).length;
+      const addedCount = dialogs.filter((item) => item.added).length;
+      summary.innerHTML = `<span class="collector-stat">${dialogs.length} chats</span><span class="collector-stat">${publicCount} public</span><span class="collector-stat">${addedCount} in Sources</span>`;
+      list.innerHTML = filtered.length ? filtered.map(collectorCard).join('') : '<p style="color:#7a879f">No groups match this filter.</p>';
+      list.querySelectorAll('[data-collector-add]').forEach((button) => button.addEventListener('click', async () => {
+        const index = Number(button.dataset.collectorIndex);
+        const source = button.dataset.collectorAdd;
+        button.disabled = true; button.textContent = 'Adding…';
+        try {
+          await apiPost('/api/telegram-research/sources', { source });
+          if (dialogs[index]) dialogs[index].added = true;
+          tg?.HapticFeedback?.notificationOccurred?.('success');
+          draw();
+        } catch (error) {
+          button.disabled = false; button.textContent = `Retry · ${error.message}`;
+        }
+      }));
+    }
+
+    async function load() {
+      status.className = 'ks-status ks-loading'; status.textContent = 'Reading groups visible to @astel_us…';
+      try {
+        const payload = await apiGet('/api/telegram-research/dialogs?limit=200');
+        dialogs = Array.isArray(payload.dialogs) ? payload.dialogs : [];
+        status.className = 'ks-status ks-ok'; status.textContent = `Loaded ${dialogs.length} group/channel dialog(s).`;
+        draw();
+      } catch (error) {
+        status.className = 'ks-status ks-error'; status.textContent = error.message; dialogs = []; draw();
+      }
+    }
+
+    search.addEventListener('input', draw);
+    app.querySelectorAll('[data-filter]').forEach((button) => button.addEventListener('click', () => {
+      activeFilter = button.dataset.filter; app.querySelectorAll('[data-filter]').forEach((node) => node.classList.toggle('on', node === button)); draw();
+    }));
+    app.querySelector('[data-refresh]').addEventListener('click', load);
+    await load();
+  }
+
   function renderHub() {
     styles(); const app = document.querySelector('#app'); if (!app) return;
     app.innerHTML = `<div class="ks-wrap"><div class="topbar"><button class="topbar__back" data-home>‹ Home</button><span class="setup-badge">Read only</span></div>
       <section class="setup-hero"><span class="setup-hero__icon">⌕</span><h1>Telegram Research</h1><p>Search and manage Telegram sources through your connected Research account.</p></section>
-      <section class="quick-list"><button class="quick-action" data-search><span><strong>Search Telegram</strong><span>Keyword sets with optional Smart Match</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-sources><span><strong>Sources</strong><span>Add or remove Telegram groups and channels</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-settings><span><strong>Search Settings</strong><span>Period and Smart Match default</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-collector><span><strong>Group Collector</strong><span>Source discovery comes next</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-account><span><strong>Account</strong><span>Research account connection and authorization</span></span><span class="quick-action__arrow">›</span></button></section>${nav('search')}</div>`;
-    app.querySelector('[data-home]').addEventListener('click', () => window.render?.()); app.querySelector('[data-search]').addEventListener('click', renderSearch); app.querySelector('[data-sources]').addEventListener('click', () => window.renderTelegramSources?.()); app.querySelector('[data-settings]').addEventListener('click', renderSettings); app.querySelector('[data-account]').addEventListener('click', () => window.renderTelegramSetup?.()); app.querySelector('[data-collector]').addEventListener('click', () => window.showSheet?.('Group Collector', 'Next module: collect and classify Telegram groups, then add selected groups into Sources.')); bindNav(app);
+      <section class="quick-list"><button class="quick-action" data-search><span><strong>Search Telegram</strong><span>Keyword sets with optional Smart Match</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-sources><span><strong>Sources</strong><span>Add or remove Telegram groups and channels</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-collector><span><strong>Group Collector</strong><span>Browse groups visible to @astel_us and add public ones</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-settings><span><strong>Search Settings</strong><span>Period and Smart Match default</span></span><span class="quick-action__arrow">›</span></button><button class="quick-action" data-account><span><strong>Account</strong><span>Research account connection and authorization</span></span><span class="quick-action__arrow">›</span></button></section>${nav('search')}</div>`;
+    app.querySelector('[data-home]').addEventListener('click', () => window.render?.()); app.querySelector('[data-search]').addEventListener('click', renderSearch); app.querySelector('[data-sources]').addEventListener('click', () => window.renderTelegramSources?.()); app.querySelector('[data-settings]').addEventListener('click', renderSettings); app.querySelector('[data-account]').addEventListener('click', () => window.renderTelegramSetup?.()); app.querySelector('[data-collector]').addEventListener('click', renderCollector); bindNav(app);
   }
 
   window.renderTelegramResearch = renderHub;
   window.renderTelegramSearch = renderSearch;
   window.renderTelegramSearchSettings = renderSettings;
+  window.renderTelegramCollector = renderCollector;
 })();
