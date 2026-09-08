@@ -69,10 +69,11 @@ function createTelegramAdapter({
     return data.result;
   }
 
-  async function sendMessage({ chatId, text, replyToMessageId = null, threadId = null }) {
+  async function sendMessage({ chatId, text, replyToMessageId = null, threadId = null, replyMarkup = null }) {
     const body = { chat_id: chatId, text };
     if (replyToMessageId) body.reply_parameters = { message_id: Number(replyToMessageId) };
     if (threadId) body.message_thread_id = Number(threadId);
+    if (replyMarkup) body.reply_markup = replyMarkup;
     return request("sendMessage", body, { ambiguousOnNetworkError: true });
   }
 

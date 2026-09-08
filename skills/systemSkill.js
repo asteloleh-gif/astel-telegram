@@ -1,7 +1,20 @@
-function createSystemSkill({ policy, conversationStore, redisClient } = {}) {
+function createSystemSkill({ policy, conversationStore, redisClient, miniAppUrl = "" } = {}) {
   function canHandle(event) {
     const command = String(event?.text || "").trim().split(/\s+/)[0].toLowerCase();
     return ["/start", "/help", "/status", "/reset"].includes(command);
+  }
+
+  function miniAppReplyMarkup() {
+    const url = String(miniAppUrl || "").trim().replace(/\/+$/, "");
+    if (!url) return null;
+    return {
+      inline_keyboard: [[
+        {
+          text: "🚀 Открыть Astel App",
+          web_app: { url },
+        },
+      ]],
+    };
   }
 
   async function handle(event) {
@@ -40,6 +53,7 @@ function createSystemSkill({ policy, conversationStore, redisClient } = {}) {
         "/reset — очистить память диалога",
         "/help — помощь",
       ].join("\n"),
+      replyMarkup: miniAppReplyMarkup(),
       rememberAssistant: false,
     };
   }

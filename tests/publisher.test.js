@@ -30,6 +30,20 @@ test("publisher: live success marks PUBLISHED", async () => {
   assert.equal(await redis.get("astel:tg:v1:reservation:100:10"), STATES.PUBLISHED);
 });
 
+test("publisher: forwards reply markup to Telegram", async () => {
+  let sent = null;
+  const { publisher } = await setup({ sendMessage: async (payload) => {
+    sent = payload;
+    return { message_id: 99 };
+  } });
+  const replyMarkup = {
+    inline_keyboard: [[{ text: "Open", web_app: { url: "https://example.com" } }]],
+  };
+  const result = await publisher.publish(event(), { text: "hello", replyMarkup });
+  assert.equal(result.published, true);
+  assert.deepEqual(sent.replyMarkup, replyMarkup);
+});
+
 test("publisher: dry run never calls Telegram", async () => {
   let called = false;
   const { publisher } = await setup({ dryRun: true, sendMessage: async () => { called = true; } });
