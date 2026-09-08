@@ -43,6 +43,15 @@ function createTelegramResearchProxy({ baseUrl, workerApiKey, timeoutMs = 15000 
     listSources: () => request("/sources"),
     addSource: (source) => request("/sources", { method: "POST", body: { source } }),
     deleteSource: (source) => request(`/sources/${encodeURIComponent(String(source || "").replace(/^@/, ""))}`, { method: "DELETE" }),
+    search: ({ query, periodHours, limit, sources } = {}) => request("/search", {
+      method: "POST",
+      body: {
+        query,
+        periodHours,
+        limit,
+        ...(Array.isArray(sources) && sources.length ? { sources } : {}),
+      },
+    }),
   };
 }
 
