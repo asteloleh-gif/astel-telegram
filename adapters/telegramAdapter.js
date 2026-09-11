@@ -81,7 +81,7 @@ function createTelegramAdapter({
     if (!url) throw new Error("setWebhook requires url");
     const body = {
       url,
-      allowed_updates: ["message", "edited_message"],
+      allowed_updates: ["message", "edited_message", "callback_query"],
       drop_pending_updates: false,
     };
     if (secretToken) body.secret_token = secretToken;
@@ -92,7 +92,11 @@ function createTelegramAdapter({
     return request("getMe", {});
   }
 
-  return { normalizeUpdate, sendMessage, setWebhook, getMe };
+  async function answerCallbackQuery({ callbackQueryId, text }) {
+    return request("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
+  }
+
+  return { normalizeUpdate, sendMessage, setWebhook, getMe, answerCallbackQuery };
 }
 
 module.exports = { createTelegramAdapter, TelegramPublishError };
