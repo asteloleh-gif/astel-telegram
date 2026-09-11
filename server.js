@@ -262,11 +262,12 @@ function createApp({
     telegramResearch,
     messageStore,
     syncMessages,
+    copilot,
   };
 }
 
 async function start() {
-  const { app, logger, redisClient, telegramAdapter, messageStore, syncMessages } = createApp();
+  const { app, logger, redisClient, telegramAdapter, messageStore, syncMessages, copilot } = createApp();
 
   try { await redisClient.connect(); }
   catch (err) {
@@ -293,6 +294,15 @@ async function start() {
         logger.info({ traceId: null, reasonCode: "TELEGRAM_WEBHOOK_SET", conversationId: null, messageId: null, userId: null, extra: { webhookUrl } });
       } catch (err) {
         logger.error({ traceId: null, reasonCode: "TELEGRAM_WEBHOOK_SETUP_FAILED", conversationId: null, messageId: null, userId: null, extra: { error: err?.message || String(err) } });
+      }
+    }
+
+    if (process.env.COPILOT_SEND_TEST_ON_START === "true") {
+      try {
+        const result = await copilot.sendTest();
+        logger.info({ traceId: null, reasonCode: "COPILOT_TEST_SENT", conversationId: null, messageId: null, userId: null, extra: { status: result.status } });
+      } catch (error) {
+        logger.error({ traceId: null, reasonCode: "COPILOT_TEST_FAILED", conversationId: null, messageId: null, userId: null, extra: { error: error?.message || String(error) } });
       }
     }
 

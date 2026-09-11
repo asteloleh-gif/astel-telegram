@@ -108,3 +108,17 @@ test("draft endpoint authenticates the producer account and sends three owner ac
     assert.equal(sent.length, 1);
   } finally { server.close(); }
 });
+
+test("safe test card exercises Telegram approval without producer submission", async () => {
+  const sent = [];
+  const controller = createApprovalController({
+    redis: createFakeRedisClient(),
+    telegram: { async sendMessage(value) { sent.push(value); } },
+    env: { COPILOT_APPROVAL_ENABLED: "true", TELEGRAM_OWNER_ID: "7", TELEGRAM_WEBHOOK_SECRET: "secret" },
+  });
+  const result = await controller.sendTest();
+  assert.equal(result.status, "sent");
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /ТЕСТОВЫЙ ПОСТ/);
+  assert.deepEqual(sent[0].replyMarkup.inline_keyboard[0].map(item => item.text), ["Одобрить", "Изменить", "Пропустить"]);
+});
