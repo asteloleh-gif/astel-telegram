@@ -12,6 +12,7 @@ Private owner-only Telegram client for **Astel Assistant**.
 - `/research <query>` for fresh web research
 - `/leads <query>` for public B2B lead research
 - `/status`, `/reset`, `/help`
+- owner-only Threads Copilot approval inbox with immutable approve/edit/skip decisions
 - Railway deployment with healthcheck and webhook auto-registration
 
 ## Pipeline
@@ -59,3 +60,12 @@ npm start
 ```
 
 See `docs/ARCHITECTURE.md` for the safety and memory design.
+
+## Threads Copilot approval inbox
+
+Set `COPILOT_APPROVAL_ENABLED=true` and provide `COPILOT_ACCOUNT_KEYS_JSON` as a
+JSON map such as `{ "ru": "random-secret", "en": "another-random-secret" }`.
+Each secret must be at least 32 characters. Producers submit immutable draft
+versions to `POST /api/copilot/drafts` with `X-Copilot-Account` and a Bearer
+credential, then poll `GET /api/copilot/drafts/:id` for the owner's decision.
+The inbox stores approval state only; it does not publish to Threads.

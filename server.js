@@ -24,6 +24,7 @@ const { createTelegramWebAppGuard } = require("./setup/telegramWebAppGuard");
 const { createTelegramResearchProxy } = require("./setup/telegramResearchProxy");
 const { planTelegramQueries, runTelegramAiSearch } = require("./research/telegramAiSearch");
 const { createMessageStore } = require("./storage/messageStore");
+const { createApprovalController } = require("./copilot/approvalController");
 
 function createApp({
   telegramAdapter,
@@ -89,6 +90,8 @@ function createApp({
   const app = express();
   app.use(express.static(path.join(__dirname, "public")));
   app.use(express.json({ limit: "1mb" }));
+  const copilot = createApprovalController({ redis, telegram, env });
+  copilot.mount(app);
 
   app.get("/health", async (_req, res) => {
     const redisUp = await redis.checkHeartbeat(heartbeatKey, policy.healthHeartbeatTtlSeconds);
@@ -103,6 +106,7 @@ function createApp({
       dryRun: policy.botDryRun,
       redisStatus: redisUp ? "up" : "down",
       messageStoreConfigured: messageStore.isConfigured(),
+      copilotApprovalEnabled: env.COPILOT_APPROVAL_ENABLED === "true",
       aiProvider: policy.aiProvider,
       aiModels: { chat: policy.openaiChatModel, power: policy.openaiPowerModel },
       skills: skills.list(),
@@ -216,6 +220,7 @@ function createApp({
     }
     res.sendStatus(200);
     try {
+      if (await copilot.handle(req.body)) return;
       const message = telegram.normalizeUpdate(req.body);
       if (!message) {
         log.warn({ traceId: null, reasonCode: "NORMALIZATION_FAILED", conversationId: null, messageId: null, userId: null });
