@@ -21,6 +21,13 @@ test("immutable draft versions are content-addressed; languages are unrestricted
   assert.notEqual(again.draft.id, first.draft.id);
   assert.notEqual((await queue.submit({ ...input, account: "cn", language: "zh-CN" })).draft.id, first.draft.id);
 });
+test("draft keeps only an HTTPS Threads permalink", async () => {
+  const queue = createApprovalQueue({ redis: createFakeRedisClient() });
+  const accepted = await queue.submit({ ...input, permalink: "https://www.threads.com/@maker/post/abc" });
+  assert.equal(accepted.draft.permalink, "https://www.threads.com/@maker/post/abc");
+  const rejected = await queue.submit({ ...input, postId: "124", permalink: "https://example.com/steal" });
+  assert.equal(rejected.draft.permalink, "");
+});
 test("simultaneous conflicting clicks produce only one terminal decision", async () => {
   const queue = createApprovalQueue({ redis: createFakeRedisClient() });
   const { draft } = await queue.submit(input);

@@ -25,7 +25,7 @@ function createApprovalController({ redis, telegram, env }) {
     if (!(await queue.reserveNotification(draft.id))) return "already_reserved";
     try {
       await telegram.sendMessage({ chatId: ownerId,
-        text: `Threads · ${draft.account} · ${draft.language}\nПост ID: ${draft.postId}\n\n${draft.sourceText}\n\nЧерновик:\n${draft.text}`,
+        text: `Threads · ${draft.account} · ${draft.language}\n${draft.permalink ? `Пост: ${draft.permalink}` : `Пост ID: ${draft.postId}`}\n\n${draft.sourceText}\n\nЧерновик:\n${draft.text}`,
         replyMarkup: { inline_keyboard: [[
           { text: "Одобрить", callback_data: `cp:a:${draft.id}` },
           { text: "Изменить", callback_data: `cp:e:${draft.id}` },
