@@ -23,10 +23,16 @@ function createApprovalQueue({ redis, namespace = "astel:copilot:v1", clock = Da
       throw new Error("INVALID_DRAFT");
     }
     const normalizedText = input.text.trim();
+    let permalink = "";
+    try {
+      const parsed = new URL(String(input.permalink || ""));
+      if (parsed.protocol === "https:" && /(^|\.)threads\.(com|net)$/i.test(parsed.hostname)) permalink = parsed.toString();
+    } catch (_) {}
     const id = createHash("sha256").update(`${input.account}:${input.postId}:${normalizedText}`).digest("hex").slice(0, 32);
     const draft = {
       id, account: input.account, postId: input.postId, language: input.language,
       text: normalizedText, sourceText: String(input.sourceText || "").slice(0, 1200),
+      permalink,
       createdAt: clock(), expiresAt: clock() + ttlSeconds * 1000,
     };
     const created = await redis.set(key(id, "draft"), JSON.stringify(draft), { NX: true, EX: ttlSeconds });
