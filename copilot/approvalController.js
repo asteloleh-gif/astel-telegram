@@ -96,6 +96,17 @@ function createApprovalController({ redis, telegram, env }) {
     else await telegram.sendMessage({ chatId: ownerId, text: "Черновик уже обработан или истёк." });
     return true;
   }
-  return { mount, handle };
+  async function sendTest() {
+    if (!active()) return { status: "disabled" };
+    const { draft } = await queue.submit({
+      account: "test",
+      postId: String(Date.now()),
+      language: "ru",
+      sourceText: "ТЕСТОВЫЙ ПОСТ: предприниматель рассказал, как автоматизация помогла освободить время для работы с клиентами.",
+      text: "Интересный пример. А какой процесс дал самый заметный результат после автоматизации?",
+    });
+    return { status: await notify(draft), id: draft.id };
+  }
+  return { mount, handle, sendTest };
 }
 module.exports = { createApprovalController };
