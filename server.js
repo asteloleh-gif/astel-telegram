@@ -91,7 +91,7 @@ function createApp({
   app.use(express.static(path.join(__dirname, "public")));
   app.use(express.json({ limit: "1mb" }));
   const copilot = createApprovalController({ redis, telegram, env });
-  copilot.mount(app);
+  copilot.mount(app, { webAppGuard: telegramSetupGuard });
 
   app.get("/health", async (_req, res) => {
     const redisUp = await redis.checkHeartbeat(heartbeatKey, policy.healthHeartbeatTtlSeconds);

@@ -21,7 +21,7 @@ body {
     radial-gradient(circle at 82% 7%, rgba(145, 111, 255, 0.18), transparent 24%),
     linear-gradient(180deg, #f8fbff 0%, #f5f7ff 48%, #f7f8fc 100%);
 }
-button, input { font: inherit; }
+button, input, textarea { font: inherit; }
 
 .app-shell {
   width: min(100%, 520px);
@@ -124,18 +124,19 @@ button, input { font: inherit; }
 }
 .setup-card form { display: grid; gap: 12px; }
 .setup-card label { font-size: 15px; font-weight: 750; }
-.setup-card input {
+.setup-card input, .setup-card textarea {
   width: 100%; border: 1px solid rgba(91,105,145,.18); background: #fff; color: var(--text); border-radius: 16px;
   padding: 15px 16px; outline: none; box-shadow: inset 0 1px 0 rgba(0,0,0,.02);
 }
-.setup-card input:focus { border-color: rgba(99,91,223,.55); box-shadow: 0 0 0 4px rgba(99,91,223,.09); }
+.setup-card textarea { resize: vertical; min-height: 158px; line-height: 1.45; }
+.setup-card input:focus, .setup-card textarea:focus { border-color: rgba(99,91,223,.55); box-shadow: 0 0 0 4px rgba(99,91,223,.09); }
 .setup-card small { color: var(--muted); line-height: 1.45; }
 .setup-primary, .setup-secondary {
   width: 100%; border: 0; border-radius: 16px; padding: 14px 16px; font-weight: 750; cursor: pointer;
 }
 .setup-primary { margin-top: 6px; background: #15182d; color: #fff; }
 .setup-secondary { background: #eef1f7; color: #46506a; }
-.setup-primary:disabled, .setup-secondary:disabled, .setup-card input:disabled { opacity: .58; }
+.setup-primary:disabled, .setup-secondary:disabled, .setup-card input:disabled, .setup-card textarea:disabled { opacity: .58; }
 .setup-message { min-height: 0; margin-bottom: 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
 .setup-message:not(:empty) { margin-bottom: 16px; padding: 12px 13px; border-radius: 14px; background: #f4f6fb; }
 .setup-message.is-success { background: #e8f8ef; color: #168657; }
@@ -148,6 +149,13 @@ button, input { font: inherit; }
 .setup-done strong { display: block; font-size: 21px; }
 .setup-done span { display: block; margin: 5px 0 18px; color: var(--muted); }
 .setup-footnote { margin: 16px 8px 0; color: var(--muted); text-align: center; font-size: 12px; line-height: 1.5; }
+.copilot-editor__hero { padding-top: 14px; }
+.copilot-editor__hero .setup-hero__icon { background: #eee8ff; color: #694ce4; }
+.copilot-source { margin-bottom: 18px; padding: 15px; border-radius: 16px; background: #f4f6fb; }
+.copilot-source strong { font-size: 13px; color: #59637a; }
+.copilot-source p { margin: 8px 0; color: #30364a; line-height: 1.45; white-space: pre-wrap; }
+.copilot-source a { color: #2584ff; font-size: 14px; font-weight: 650; text-decoration: none; }
+.copilot-editor__meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 
 @media (min-width: 470px) {
   .app-shell { padding-left: 24px; padding-right: 24px; }

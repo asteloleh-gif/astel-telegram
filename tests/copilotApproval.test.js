@@ -76,6 +76,15 @@ test("edit creates a new immutable version and supersedes the old buttons", asyn
   assert.equal((await queue.decide(revised.draft.id, "approved", "7")).status, "approved");
 });
 
+test("direct editor revision creates a new immutable version", async () => {
+  const queue = createApprovalQueue({ redis: createFakeRedisClient() });
+  const { draft } = await queue.submit(input);
+  const revised = await queue.reviseById(draft.id, "7", "Версия из Mini App");
+  assert.equal(revised.status, "revised");
+  assert.equal(revised.draft.text, "Версия из Mini App");
+  assert.equal((await queue.decision(draft.id)).replacementId, revised.draft.id);
+});
+
 test("unchanged edit leaves the original approval buttons valid", async () => {
   const queue = createApprovalQueue({ redis: createFakeRedisClient() });
   const { draft } = await queue.submit(input);
@@ -91,7 +100,7 @@ test("draft endpoint authenticates the producer account and sends three owner ac
   app.use(express.json());
   createApprovalController({
     redis: createFakeRedisClient(), telegram,
-    env: { COPILOT_APPROVAL_ENABLED: "true", TELEGRAM_OWNER_ID: "7", TELEGRAM_WEBHOOK_SECRET: "webhook-secret", COPILOT_ACCOUNT_KEYS_JSON: JSON.stringify({ ru: "x".repeat(32) }) },
+    env: { COPILOT_APPROVAL_ENABLED: "true", TELEGRAM_OWNER_ID: "7", TELEGRAM_WEBHOOK_SECRET: "webhook-secret", PUBLIC_BASE_URL: "https://astel.example", COPILOT_ACCOUNT_KEYS_JSON: JSON.stringify({ ru: "x".repeat(32) }) },
   }).mount(app);
   const server = await listen(app);
   const url = `http://127.0.0.1:${server.address().port}/api/copilot/drafts`;
@@ -102,10 +111,38 @@ test("draft endpoint authenticates the producer account and sends three owner ac
     assert.equal(authorized.status, 201);
     assert.equal(sent.length, 1);
     assert.deepEqual(sent[0].replyMarkup.inline_keyboard[0].map(item => item.text), ["Одобрить", "Изменить", "Пропустить"]);
+    assert.match(sent[0].replyMarkup.inline_keyboard[0][1].web_app.url, /^https:\/\/astel\.example\/\?copilotDraft=/);
     const loop = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-copilot-account": "ru", authorization: `Bearer ${"x".repeat(32)}` }, body: JSON.stringify({ ...input, postId: "124" }) });
     assert.equal(loop.status, 429);
     assert.equal(loop.headers.get("retry-after"), "10");
     assert.equal(sent.length, 1);
+  } finally { server.close(); }
+});
+
+test("owner Mini App can load and revise a draft, then receives a new card", async () => {
+  const redis = createFakeRedisClient();
+  const sent = [];
+  const controller = createApprovalController({
+    redis,
+    telegram: { async sendMessage(value) { sent.push(value); } },
+    env: { COPILOT_APPROVAL_ENABLED: "true", TELEGRAM_OWNER_ID: "7", TELEGRAM_WEBHOOK_SECRET: "secret", PUBLIC_BASE_URL: "https://astel.example" },
+  });
+  const queue = createApprovalQueue({ redis });
+  const { draft } = await queue.submit(input);
+  const app = express();
+  app.use(express.json());
+  controller.mount(app, { webAppGuard: (req, _res, next) => { req.telegramMiniAppUser = { id: 7 }; next(); } });
+  const server = await listen(app);
+  const url = `http://127.0.0.1:${server.address().port}/api/copilot/editor/${draft.id}`;
+  try {
+    const loaded = await fetch(url);
+    assert.equal(loaded.status, 200);
+    assert.equal((await loaded.json()).draft.text, input.text);
+    const saved = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "Новый интерактивный ответ" }) });
+    assert.equal(saved.status, 200);
+    assert.equal((await saved.json()).status, "revised");
+    assert.equal(sent.length, 1);
+    assert.equal((await queue.decision(draft.id)).action, "superseded");
   } finally { server.close(); }
 });
 

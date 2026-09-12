@@ -64,10 +64,16 @@ function createApprovalQueue({ redis, namespace = "astel:copilot:v1", clock = Da
     const originalId = await pendingEdit(ownerId);
     if (!originalId) return { status: "none" };
     await redis.del(key(ownerId, "edit"));
+    return reviseById(originalId, ownerId, text);
+  }
+  async function reviseById(originalId, ownerId, text) {
     const original = await get(originalId);
     if (!original || original.expiresAt <= clock()) return { status: "expired" };
-    if (String(text || "").trim() === original.text) return { status: "unchanged", draft: original };
-    const replacement = await submit({ ...original, text });
+    if (await decision(originalId)) return { status: "already_decided", decision: await decision(originalId) };
+    const normalizedText = String(text || "").trim();
+    if (!normalizedText || [...normalizedText].length > 500) return { status: "invalid" };
+    if (normalizedText === original.text) return { status: "unchanged", draft: original };
+    const replacement = await submit({ ...original, text: normalizedText });
     const value = { action: "superseded", ownerId: String(ownerId), at: clock(), replacementId: replacement.draft.id };
     const remaining = Math.max(1, Math.ceil((original.expiresAt - clock()) / 1000));
     const saved = await redis.set(key(originalId, "decision"), JSON.stringify(value), { NX: true, EX: remaining + 86400 });
@@ -80,7 +86,7 @@ function createApprovalQueue({ redis, namespace = "astel:copilot:v1", clock = Da
   async function reserveSubmission(account, cooldownSeconds = 10) {
     return (await redis.set(key(`account:${account}`, "submission-lock"), "1", { NX: true, EX: cooldownSeconds })) === "OK";
   }
-  return { submit, get, decision, decide, beginEdit, pendingEdit, revise, reserveNotification, reserveSubmission };
+  return { submit, get, decision, decide, beginEdit, pendingEdit, revise, reviseById, reserveNotification, reserveSubmission };
 }
 
 module.exports = { createApprovalQueue };

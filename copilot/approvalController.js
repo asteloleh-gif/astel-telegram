@@ -13,6 +13,16 @@ function createApprovalController({ redis, telegram, env }) {
   } catch (_) {}
   const submissionCooldownSeconds = Math.max(1, Number(env.COPILOT_SUBMISSION_COOLDOWN_SECONDS || 10));
   const active = () => enabled && Boolean(ownerId && env.TELEGRAM_WEBHOOK_SECRET);
+  function editorUrl(draftId) {
+    try {
+      const url = new URL(String(env.PUBLIC_BASE_URL || ""));
+      if (url.protocol !== "https:") return "";
+      url.pathname = "/";
+      url.search = new URLSearchParams({ copilotDraft: draftId }).toString();
+      url.hash = "";
+      return url.toString();
+    } catch (_) { return ""; }
+  }
   function authenticate(req) {
     const account = String(req.get("x-copilot-account") || "");
     const secret = Object.hasOwn(accounts, account) ? accounts[account] : null;
@@ -24,11 +34,12 @@ function createApprovalController({ redis, telegram, env }) {
   async function notify(draft) {
     if (!(await queue.reserveNotification(draft.id))) return "already_reserved";
     try {
+      const editUrl = editorUrl(draft.id);
       await telegram.sendMessage({ chatId: ownerId,
         text: `Threads · ${draft.account} · ${draft.language}\n${draft.permalink ? `Пост: ${draft.permalink}` : `Пост ID: ${draft.postId}`}\n\n${draft.sourceText}\n\nЧерновик:\n${draft.text}`,
         replyMarkup: { inline_keyboard: [[
           { text: "Одобрить", callback_data: `cp:a:${draft.id}` },
-          { text: "Изменить", callback_data: `cp:e:${draft.id}` },
+          editUrl ? { text: "Изменить", web_app: { url: editUrl } } : { text: "Изменить", callback_data: `cp:e:${draft.id}` },
           { text: "Пропустить", callback_data: `cp:s:${draft.id}` },
         ]] },
       });
@@ -37,7 +48,7 @@ function createApprovalController({ redis, telegram, env }) {
       return "unconfirmed";
     }
   }
-  function mount(app) {
+  function mount(app, { webAppGuard } = {}) {
     app.post("/api/copilot/drafts", async (req, res) => {
       if (!active()) return res.status(503).json({ error: "COPILOT_DISABLED" });
       const account = authenticate(req);
@@ -64,6 +75,28 @@ function createApprovalController({ redis, telegram, env }) {
         return res.json({ draft, decision: await queue.decision(draft.id) });
       } catch (_) { return res.status(503).json({ error: "STORE_UNAVAILABLE" }); }
     });
+    if (typeof webAppGuard === "function") {
+      app.get("/api/copilot/editor/:id", webAppGuard, async (req, res) => {
+        if (!active()) return res.status(503).json({ error: "COPILOT_DISABLED" });
+        try {
+          const draft = await queue.get(req.params.id);
+          if (!draft || draft.expiresAt <= Date.now()) return res.status(404).json({ error: "DRAFT_EXPIRED" });
+          if (await queue.decision(draft.id)) return res.status(409).json({ error: "DRAFT_ALREADY_DECIDED" });
+          return res.json({ draft });
+        } catch (_) { return res.status(503).json({ error: "STORE_UNAVAILABLE" }); }
+      });
+      app.post("/api/copilot/editor/:id", webAppGuard, async (req, res) => {
+        if (!active()) return res.status(503).json({ error: "COPILOT_DISABLED" });
+        try {
+          const result = await queue.reviseById(req.params.id, ownerId, req.body?.text);
+          if (result.status === "invalid") return res.status(400).json({ error: "INVALID_DRAFT_TEXT" });
+          if (result.status === "expired") return res.status(404).json({ error: "DRAFT_EXPIRED" });
+          if (result.status === "already_decided") return res.status(409).json({ error: "DRAFT_ALREADY_DECIDED" });
+          if (result.status === "revised") await notify(result.draft);
+          return res.json({ status: result.status, id: result.draft.id });
+        } catch (_) { return res.status(503).json({ error: "STORE_UNAVAILABLE" }); }
+      });
+    }
   }
   async function handle(update) {
     const callback = update?.callback_query;

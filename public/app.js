@@ -159,9 +159,105 @@ function setupMessage(text, type = '') {
 }
 
 function setSetupBusy(busy) {
-  document.querySelectorAll('.setup-card button, .setup-card input').forEach((node) => {
+  document.querySelectorAll('.setup-card button, .setup-card input, .setup-card textarea').forEach((node) => {
     node.disabled = Boolean(busy);
   });
+}
+
+async function copilotEditorApi(id, { method = 'GET', body } = {}) {
+  if (!tg?.initData) throw new Error('Открой редактор кнопкой «Изменить» в Telegram.');
+  const response = await fetch(`/api/copilot/editor/${encodeURIComponent(id)}`, {
+    method,
+    headers: setupHeaders(),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const messages = {
+      DRAFT_EXPIRED: 'Черновик уже истёк.',
+      DRAFT_ALREADY_DECIDED: 'Этот черновик уже обработан.',
+      INVALID_DRAFT_TEXT: 'Текст должен содержать от 1 до 500 символов.',
+    };
+    throw new Error(messages[payload?.error] || `Не удалось открыть редактор (${response.status}).`);
+  }
+  return payload;
+}
+
+function closeMiniApp() {
+  if (tg?.close) tg.close();
+  else history.back();
+}
+
+async function renderCopilotEditor(id) {
+  const app = document.querySelector('#app');
+  app.innerHTML = `
+    <div class="topbar">
+      <button class="topbar__back" data-close-editor>‹ Закрыть</button>
+      <span class="setup-badge">Только владелец</span>
+    </div>
+    <section class="setup-hero copilot-editor__hero">
+      <span class="setup-hero__icon">${icon('bolt')}</span>
+      <h1>Изменить ответ</h1>
+      <p>Исправь текст. После сохранения бот пришлёт новую карточку для одобрения.</p>
+    </section>
+    <section class="setup-card">
+      <div id="setup-message" class="setup-message">Загружаю черновик…</div>
+      <div id="copilot-editor-content" hidden>
+        <div class="copilot-source">
+          <strong>Исходный пост</strong>
+          <p id="copilot-source-text"></p>
+          <a id="copilot-source-link" target="_blank" rel="noopener noreferrer" hidden>Открыть в Threads ↗</a>
+        </div>
+        <form id="copilot-editor-form">
+          <label for="copilot-draft-text">Твой ответ</label>
+          <textarea id="copilot-draft-text" maxlength="500" rows="7" required></textarea>
+          <div class="copilot-editor__meta"><span>RU / EN / 中文 поддерживаются</span><span id="copilot-char-count">0 / 500</span></div>
+          <button type="submit" class="setup-primary">Сохранить новую версию</button>
+          <button type="button" class="setup-secondary" data-close-editor>Отмена</button>
+        </form>
+      </div>
+    </section>`;
+
+  document.querySelectorAll('[data-close-editor]').forEach((button) => button.addEventListener('click', closeMiniApp));
+  tg?.BackButton?.show?.();
+  tg?.BackButton?.onClick?.(closeMiniApp);
+
+  try {
+    const { draft } = await copilotEditorApi(id);
+    const textarea = document.querySelector('#copilot-draft-text');
+    const count = document.querySelector('#copilot-char-count');
+    const updateCount = () => { count.textContent = `${[...textarea.value].length} / 500`; };
+    textarea.value = draft.text;
+    document.querySelector('#copilot-source-text').textContent = draft.sourceText || 'Текст исходного поста недоступен.';
+    if (draft.permalink) {
+      const link = document.querySelector('#copilot-source-link');
+      link.href = draft.permalink;
+      link.hidden = false;
+    }
+    document.querySelector('#copilot-editor-content').hidden = false;
+    setupMessage('');
+    updateCount();
+    textarea.addEventListener('input', updateCount);
+    textarea.focus();
+    document.querySelector('#copilot-editor-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const text = textarea.value.trim();
+      if (!text || [...text].length > 500) return setupMessage('Текст должен содержать от 1 до 500 символов.', 'is-error');
+      setSetupBusy(true);
+      setupMessage('Сохраняю новую версию…');
+      try {
+        const result = await copilotEditorApi(id, { method: 'POST', body: { text } });
+        setupMessage(result.status === 'unchanged' ? 'Текст не изменился — старая карточка остаётся активной.' : 'Готово. Новая карточка уже отправлена в Telegram.', 'is-success');
+        tg?.HapticFeedback?.notificationOccurred?.('success');
+        setTimeout(closeMiniApp, 900);
+      } catch (error) {
+        setupMessage(error.message, 'is-error');
+        setSetupBusy(false);
+      }
+    });
+  } catch (error) {
+    setupMessage(error.message, 'is-error');
+  }
 }
 
 function showSetupStep(step) {
@@ -503,4 +599,6 @@ function initTelegram() {
 }
 
 initTelegram();
-render();
+const copilotDraftId = new URLSearchParams(window.location.search).get('copilotDraft');
+if (/^[a-f0-9]{32}$/.test(copilotDraftId || '')) renderCopilotEditor(copilotDraftId);
+else render();
