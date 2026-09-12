@@ -131,11 +131,11 @@ test("producer can send a compact cycle report to the owner", async () => {
   const server = await listen(app);
   const url = `http://127.0.0.1:${server.address().port}/api/copilot/reports`;
   try {
-    const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-copilot-account": "ru", authorization: `Bearer ${"x".repeat(32)}` }, body: JSON.stringify({ status: "ok", scanned: 20, fresh: 5, eligible: 2, evaluated: 2, submitted: 1, aiTokens: 430 }) });
+    const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-copilot-account": "ru", authorization: `Bearer ${"x".repeat(32)}` }, body: JSON.stringify({ status: "ok", scanned: 20, fresh: 5, eligible: 2, evaluated: 2, submitted: 1, aiTokens: 430, aiCostMicrousd: 172 }) });
     assert.equal(response.status, 201);
     assert.match(sent[0].text, /Copilot · RU/);
     assert.match(sent[0].text, /Просмотрено: 20/);
-    assert.match(sent[0].text, /GPT: 430 токенов/);
+    assert.match(sent[0].text, /GPT: 430 токенов · ≈ \$0\.0002/);
   } finally { server.close(); }
 });
 
