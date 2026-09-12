@@ -31,6 +31,28 @@ function createApprovalController({ redis, telegram, env }) {
     const expected = Buffer.from(`Bearer ${secret}`);
     return supplied.length === expected.length && timingSafeEqual(supplied, expected) ? account : null;
   }
+  async function report(account, input) {
+    const safeInteger = (value, max = 1000000) => {
+      const number = Number(value);
+      return Number.isInteger(number) && number >= 0 && number <= max ? number : null;
+    };
+    const scanned = safeInteger(input?.scanned);
+    const fresh = safeInteger(input?.fresh);
+    const eligible = safeInteger(input?.eligible);
+    const evaluated = safeInteger(input?.evaluated);
+    const submitted = safeInteger(input?.submitted, 100);
+    const aiTokens = safeInteger(input?.aiTokens, 10000000);
+    if ([scanned, fresh, eligible, evaluated, submitted, aiTokens].some(value => value === null)) throw new Error("INVALID_REPORT");
+    const status = String(input?.status || "ok").slice(0, 30);
+    const reason = String(input?.reason || "").replace(/[\r\n]+/g, " ").slice(0, 80);
+    await telegram.sendMessage({
+      chatId: ownerId,
+      text: `Copilot · ${account.toUpperCase()} · цикл завершён\n` +
+        `Просмотрено: ${scanned}\nНовых: ${fresh}\nПосле фильтра: ${eligible}\n` +
+        `GPT оценил: ${evaluated}\nЧерновиков: ${submitted}\nGPT: ${aiTokens} токенов\n` +
+        `${status === "ok" ? "Следующий запуск: через 4 часа" : `Статус: ${status}${reason ? ` · ${reason}` : ""}`}`,
+    });
+  }
   async function notify(draft) {
     if (!(await queue.reserveNotification(draft.id))) return "already_reserved";
     try {
@@ -49,6 +71,17 @@ function createApprovalController({ redis, telegram, env }) {
     }
   }
   function mount(app, { webAppGuard } = {}) {
+    app.post("/api/copilot/reports", async (req, res) => {
+      if (!active()) return res.status(503).json({ error: "COPILOT_DISABLED" });
+      const account = authenticate(req);
+      if (!account) return res.sendStatus(401);
+      try {
+        await report(account, req.body);
+        return res.status(201).json({ status: "sent" });
+      } catch (error) {
+        return res.status(error.message === "INVALID_REPORT" ? 400 : 503).json({ error: error.message === "INVALID_REPORT" ? "INVALID_REPORT" : "TELEGRAM_UNAVAILABLE" });
+      }
+    });
     app.post("/api/copilot/drafts", async (req, res) => {
       if (!active()) return res.status(503).json({ error: "COPILOT_DISABLED" });
       const account = authenticate(req);
