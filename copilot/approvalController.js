@@ -42,14 +42,15 @@ function createApprovalController({ redis, telegram, env }) {
     const evaluated = safeInteger(input?.evaluated);
     const submitted = safeInteger(input?.submitted, 100);
     const aiTokens = safeInteger(input?.aiTokens, 10000000);
-    if ([scanned, fresh, eligible, evaluated, submitted, aiTokens].some(value => value === null)) throw new Error("INVALID_REPORT");
+    const aiCostMicrousd = safeInteger(input?.aiCostMicrousd, 100000000);
+    if ([scanned, fresh, eligible, evaluated, submitted, aiTokens, aiCostMicrousd].some(value => value === null)) throw new Error("INVALID_REPORT");
     const status = String(input?.status || "ok").slice(0, 30);
     const reason = String(input?.reason || "").replace(/[\r\n]+/g, " ").slice(0, 80);
     await telegram.sendMessage({
       chatId: ownerId,
       text: `Copilot · ${account.toUpperCase()} · цикл завершён\n` +
         `Просмотрено: ${scanned}\nНовых: ${fresh}\nПосле фильтра: ${eligible}\n` +
-        `GPT оценил: ${evaluated}\nЧерновиков: ${submitted}\nGPT: ${aiTokens} токенов\n` +
+        `GPT оценил: ${evaluated}\nЧерновиков: ${submitted}\nGPT: ${aiTokens} токенов · ≈ $${(aiCostMicrousd / 1000000).toFixed(4)}\n` +
         `${status === "ok" ? "Следующий запуск: через 4 часа" : `Статус: ${status}${reason ? ` · ${reason}` : ""}`}`,
     });
   }
