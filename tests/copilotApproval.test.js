@@ -139,6 +139,25 @@ test("producer can send a compact cycle report to the owner", async () => {
   } finally { server.close(); }
 });
 
+test("successful empty cycle report stays silent", async () => {
+  const sent = [];
+  const app = express();
+  app.use(express.json());
+  createApprovalController({
+    redis: createFakeRedisClient(),
+    telegram: { async sendMessage(value) { sent.push(value); } },
+    env: { COPILOT_APPROVAL_ENABLED: "true", TELEGRAM_OWNER_ID: "7", TELEGRAM_WEBHOOK_SECRET: "secret", COPILOT_ACCOUNT_KEYS_JSON: JSON.stringify({ ru: "x".repeat(32) }) },
+  }).mount(app);
+  const server = await listen(app);
+  const url = `http://127.0.0.1:${server.address().port}/api/copilot/reports`;
+  try {
+    const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-copilot-account": "ru", authorization: `Bearer ${"x".repeat(32)}` }, body: JSON.stringify({ status: "ok", scanned: 20, fresh: 0, eligible: 0, evaluated: 0, submitted: 0, aiTokens: 0, aiCostMicrousd: 0 }) });
+    assert.equal(response.status, 201);
+    assert.equal((await response.json()).status, "skipped_empty");
+    assert.equal(sent.length, 0);
+  } finally { server.close(); }
+});
+
 test("owner Mini App can load and revise a draft, then receives a new card", async () => {
   const redis = createFakeRedisClient();
   const sent = [];

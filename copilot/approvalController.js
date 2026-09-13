@@ -46,6 +46,7 @@ function createApprovalController({ redis, telegram, env }) {
     if ([scanned, fresh, eligible, evaluated, submitted, aiTokens, aiCostMicrousd].some(value => value === null)) throw new Error("INVALID_REPORT");
     const status = String(input?.status || "ok").slice(0, 30);
     const reason = String(input?.reason || "").replace(/[\r\n]+/g, " ").slice(0, 80);
+    if (status === "ok" && submitted === 0) return "skipped_empty";
     await telegram.sendMessage({
       chatId: ownerId,
       text: `Copilot · ${account.toUpperCase()} · цикл завершён\n` +
@@ -53,6 +54,7 @@ function createApprovalController({ redis, telegram, env }) {
         `GPT оценил: ${evaluated}\nЧерновиков: ${submitted}\nGPT: ${aiTokens} токенов · ≈ $${(aiCostMicrousd / 1000000).toFixed(4)}\n` +
         `${status === "ok" ? "Следующий запуск: через 4 часа" : `Статус: ${status}${reason ? ` · ${reason}` : ""}`}`,
     });
+    return "sent";
   }
   async function notify(draft) {
     if (!(await queue.reserveNotification(draft.id))) return "already_reserved";
@@ -77,8 +79,8 @@ function createApprovalController({ redis, telegram, env }) {
       const account = authenticate(req);
       if (!account) return res.sendStatus(401);
       try {
-        await report(account, req.body);
-        return res.status(201).json({ status: "sent" });
+        const status = await report(account, req.body);
+        return res.status(201).json({ status });
       } catch (error) {
         return res.status(error.message === "INVALID_REPORT" ? 400 : 503).json({ error: error.message === "INVALID_REPORT" ? "INVALID_REPORT" : "TELEGRAM_UNAVAILABLE" });
       }
