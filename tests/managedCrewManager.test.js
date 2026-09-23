@@ -126,3 +126,13 @@ test("managed roster excludes Kevin because astelcore is Kevin", () => {
   assert.equal(CREW_MANAGED_AGENTS.length, 8);
   assert.equal(CREW_MANAGED_AGENTS.some(agent => agent.id === "orchestrator"), false);
 });
+
+
+test("auto setup prompt is sent only once per day", async () => {
+  const { manager, telegramCalls } = await fixture();
+  const first = await manager.sendAutoSetupPromptOnce("7");
+  const second = await manager.sendAutoSetupPromptOnce("7");
+  assert.equal(first, true);
+  assert.equal(second, false);
+  assert.equal(telegramCalls.length, 2);
+});
