@@ -25,6 +25,7 @@ function createManagedCrewManager({
   logger = console,
   fetchImpl = globalThis.fetch,
   namespace = process.env.REDIS_NAMESPACE || "astel:tg:v1",
+  managerUsername = process.env.TELEGRAM_MANAGER_USERNAME || "astelcore_bot",
 } = {}) {
   if (!store) throw new Error("Managed Crew Manager requires store");
   if (!redisClient) throw new Error("Managed Crew Manager requires redisClient");
@@ -103,25 +104,20 @@ function createManagedCrewManager({
 
   async function promptForAgent(chatId, agent) {
     await redisClient.set(pendingKey, agent.id, { EX: 3600 });
+    const manager = normalizeUsername(managerUsername || "astelcore_bot");
+    const createUrl = `https://t.me/newbot/${manager}/${agent.username}?name=${encodeURIComponent(agent.name)}`;
     return telegramAdapter.sendMessage({
       chatId,
       text: [
         `${agent.emoji} Создаём ${agent.name} — ${agent.title}.`,
         "",
-        "Нажми кнопку ниже и подтверди создание managed bot. Имя и username уже предложены Telegram.",
+        "Нажми кнопку ниже. Telegram откроет именно форму создания managed bot с уже заполненными именем и username.",
       ].join("\n"),
       replyMarkup: {
-        keyboard: [[{
+        inline_keyboard: [[{
           text: `Create ${agent.name}`,
-          request_managed_bot: {
-            request_id: agent.requestId,
-            suggested_name: agent.name,
-            suggested_username: agent.username,
-          },
+          url: createUrl,
         }]],
-        resize_keyboard: true,
-        one_time_keyboard: true,
-        input_field_placeholder: "Create next Hyper Crew bot",
       },
     });
   }
