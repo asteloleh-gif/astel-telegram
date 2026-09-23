@@ -169,3 +169,62 @@ test("routes @managed_bot mention to its agent", async () => {
   });
   assert.equal(routed, "Sergio Contentmaker перепиши это");
 });
+
+
+test("managed agent retries without reply target when Telegram cannot see replied message", async () => {
+  const fake = createFakeRedisClient();
+  const redis = createRedisClient({ client: fake });
+  await redis.connect();
+  const store = createStore();
+  await store.upsert({
+    agentId: "researcher",
+    botUserId: "9001",
+    username: "astel_tommy_bot",
+    displayName: "Tommy the Googler",
+    ownerUserId: "7",
+  });
+
+  const sendBodies = [];
+  const fetchImpl = async (url, options) => {
+    const body = JSON.parse(options.body || "{}");
+    const method = url.split("/").at(-1);
+    if (method === "getManagedBotToken") {
+      return new Response(JSON.stringify({ ok: true, result: "123:managed-token" }), { status: 200 });
+    }
+    if (method === "sendMessage") {
+      sendBodies.push(body);
+      if (body.reply_parameters) {
+        return new Response(JSON.stringify({
+          ok: false,
+          error_code: 400,
+          description: "Bad Request: message to be replied not found",
+        }), { status: 400 });
+      }
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 77 } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: true, result: true }), { status: 200 });
+  };
+
+  const manager = createManagedCrewManager({
+    managerToken: "manager-token",
+    ownerUserId: "7",
+    groupChatId: "-5283133914",
+    store,
+    redisClient: redis,
+    telegramAdapter: { sendMessage: async () => ({ message_id: 1 }) },
+    fetchImpl,
+    namespace: "test-fallback",
+  });
+
+  const sent = await manager.sendAsAgent({
+    agentId: "researcher",
+    chatId: "-5283133914",
+    text: "ONLINE",
+    replyToMessageId: "42",
+  });
+
+  assert.equal(sent, true);
+  assert.equal(sendBodies.length, 2);
+  assert.deepEqual(sendBodies[0].reply_parameters, { message_id: 42 });
+  assert.equal(sendBodies[1].reply_parameters, undefined);
+});
