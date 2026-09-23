@@ -31,3 +31,30 @@ test("crew skill creates an idempotent run and returns approval package", async 
   assert.match(result.text, /Ready draft/);
   assert.match(result.replyMarkup.inline_keyboard[0][0].web_app.url, /crewRun=run-1/);
 });
+
+test("crew skill reports a failed review instead of going silent", async () => {
+  const client = {
+    createRun: async () => ({ id: "run-failed" }),
+    startRun: async () => { throw new Error("CONTENT_REVIEW_REVISE"); },
+    getRun: async () => ({
+      id: "run-failed",
+      projectId: "astel-business",
+      status: "FAILED",
+      stages: [{}, {}, {}, {}, {}, {}],
+      usage: { totalTokens: 4321 },
+      error: { message: "CONTENT_REVIEW_REVISE" },
+      outputs: {
+        reviewer: {
+          notes: "The hook is still too generic.",
+          revisionInstructions: ["Add a concrete angle."],
+        },
+      },
+    }),
+  };
+  const skill = createHyperCrewSkill({ client, miniAppUrl: "https://assistant.example" });
+  const result = await skill.handle({ text: "/crew launch", updateId: "43", conversationId: "7", messageId: "10", userId: "1" });
+  assert.match(result.text, /остановил задачу/);
+  assert.match(result.text, /повторную доработку/);
+  assert.match(result.text, /Add a concrete angle/);
+  assert.match(result.replyMarkup.inline_keyboard[0][0].web_app.url, /crewRun=run-failed/);
+});
