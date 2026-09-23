@@ -31,6 +31,7 @@ function createManagedCrewManager({
   if (!telegramAdapter) throw new Error("Managed Crew Manager requires telegramAdapter");
 
   const pendingKey = `${namespace}:managed-crew:pending:${ownerUserId || "owner"}`;
+  const autoPromptKey = `${namespace}:managed-crew:auto-prompt:v1`;
   const tokenCache = new Map();
 
   async function managerApi(method, body = {}) {
@@ -240,6 +241,16 @@ function createManagedCrewManager({
     return true;
   }
 
+  async function sendAutoSetupPromptOnce(chatId) {
+    const alreadySent = await redisClient.exists(autoPromptKey).catch(() => 0);
+    if (alreadySent) return false;
+    const missing = await nextMissing();
+    if (!missing) return false;
+    await sendSetupStatus(chatId);
+    await redisClient.set(autoPromptKey, "1", { EX: 86400 }).catch(() => {});
+    return true;
+  }
+
   async function sendAsAgent({ agentId, chatId, text, dataUrl = null, replyToMessageId = null, threadId = null } = {}) {
     if (!agentId || agentId === "orchestrator") return false;
     const record = await store.get(agentId);
@@ -273,6 +284,7 @@ function createManagedCrewManager({
     handleSetupCommand,
     handleRawUpdate,
     sendSetupStatus,
+    sendAutoSetupPromptOnce,
     listStatus,
     sendAsAgent,
     getManagedToken,
