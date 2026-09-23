@@ -124,3 +124,28 @@ test("uses managed agent identity before falling back to Kevin", async () => {
   assert.equal(calls.managed[0].agentId, "copywriter");
   assert.equal(calls.fallback.length, 0);
 });
+
+
+test("passes manager-routed text into Hyper Crew", async () => {
+  const calls = [];
+  await handleHyperCrewGroupChat({
+    event: event({ text: "сделай еще вариант", parentUserId: "9006" }),
+    client: {
+      chat: async input => {
+        calls.push(input);
+        return {
+          target: { id: "visual", name: "Yuki Pixel", title: "Visual" },
+          reply: "Ок",
+          artifacts: [],
+        };
+      },
+    },
+    conversationStore: { read: async () => [], append: async () => {} },
+    telegramAdapter: { sendMessage: async () => {}, sendPhoto: async () => {} },
+    managedBotManager: {
+      routeTextForEvent: async () => "Yuki Pixel сделай еще вариант",
+      sendAsAgent: async () => true,
+    },
+  });
+  assert.equal(calls[0].text, "Yuki Pixel сделай еще вариант");
+});
