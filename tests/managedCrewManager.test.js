@@ -74,7 +74,8 @@ test("/crewsetup prompts for the first missing managed bot", async () => {
   assert.equal(telegramCalls.length, 2);
   const prompt = telegramCalls[1];
   assert.match(prompt.text, /Tommy the Googler/);
-  assert.equal(prompt.replyMarkup.keyboard[0][0].request_managed_bot.suggested_username, "astel_tommy_bot");
+  assert.match(prompt.replyMarkup.inline_keyboard[0][0].url, /t\.me\/newbot\/astelcore_bot\/astel_tommy_bot/);
+  assert.match(prompt.replyMarkup.inline_keyboard[0][0].url, /name=Tommy%20the%20Googler/);
 });
 
 test("managed_bot update binds the pending agent and configures profile", async () => {
