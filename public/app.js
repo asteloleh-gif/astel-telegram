@@ -16,7 +16,7 @@ const modules = [
   { id: 'skills', title: 'Skills', description: 'Manage skills and integrations', icon: 'bolt', bg: '#e3f4ff', fg: '#188ee8' },
   { id: 'leads', title: 'Leads', description: 'Find and manage opportunities', icon: 'users', bg: '#eee8ff', fg: '#694ce4' },
   { id: 'research', title: 'Research', description: 'Search, analyze and get insights', icon: 'search', bg: '#dcf7e9', fg: '#12a66c' },
-  { id: 'think', title: 'Think', description: 'Reason, plan and solve complex tasks', icon: 'brain', bg: '#fff0df', fg: '#f28d24' },
+  { id: 'crew', title: 'Hyper Crew', description: 'Run the complete AI team', icon: 'brain', bg: '#fff0df', fg: '#f28d24' },
   { id: 'status', title: 'Status', description: 'Track progress and activity', icon: 'chart', bg: '#eae8ff', fg: '#6553e6' },
   { id: 'settings', title: 'Settings', description: 'Connect Telegram Research and configure Astel', icon: 'gear', bg: '#e9eef5', fg: '#57708f' },
 ];
@@ -149,6 +149,121 @@ async function sourceApi(path = '', { method = 'GET', body } = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error || `Source request failed (${response.status})`);
   return payload;
+}
+
+async function hyperCrewApi(path = '', { method = 'GET', body } = {}) {
+  if (!tg?.initData) throw new Error('Открой Astel из Telegram, чтобы управлять Hyper Crew.');
+  const response = await fetch(`/api/hyper-crew${path}`, {
+    method,
+    headers: setupHeaders(),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.message || payload?.error || `Hyper Crew request failed (${response.status})`);
+  return payload;
+}
+
+function crewStatusClass(status) {
+  if (['COMPLETED', 'APPROVED'].includes(status)) return 'is-success';
+  if (['FAILED', 'REJECTED'].includes(status)) return 'is-error';
+  return '';
+}
+
+function renderCrewRun(run) {
+  const variants = run?.approval?.package?.draft?.variants || [];
+  const destinations = run?.approval?.package?.distributionPlan?.destinations || [];
+  const awaiting = run.status === 'AWAITING_APPROVAL';
+  return `
+    <article class="crew-run" data-run-id="${escapeHtml(run.id)}">
+      <div class="crew-run__head">
+        <strong>${escapeHtml(run.objective)}</strong>
+        <span class="crew-status ${crewStatusClass(run.status)}">${escapeHtml(run.status)}</span>
+      </div>
+      <p>${escapeHtml(run.projectId)} · ${Number(run.stages?.length || 0)} stages · ${Number(run.usage?.totalTokens || 0)} tokens</p>
+      ${variants.slice(0, 2).map(item => `<div class="crew-draft"><b>${escapeHtml(item.platform)}</b><span>${escapeHtml(item.text)}</span></div>`).join('')}
+      ${destinations.length ? `<small>Distribution: ${escapeHtml(destinations.map(item => item.platform).join(', '))}</small>` : ''}
+      ${awaiting ? `<div class="crew-actions"><button class="setup-primary" data-crew-decision="APPROVE">Approve dry-run</button><button class="setup-secondary" data-crew-decision="REJECT">Reject</button></div>` : ''}
+    </article>`;
+}
+
+async function loadCrewRuns(focusRunId = '') {
+  const list = document.querySelector('#crew-runs');
+  if (!list) return;
+  list.innerHTML = '<p class="setup-footnote">Loading runs…</p>';
+  try {
+    const payload = focusRunId
+      ? { runs: [await hyperCrewApi(`/runs/${encodeURIComponent(focusRunId)}`)] }
+      : await hyperCrewApi('/runs');
+    const runs = [...(payload.runs || [])].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    list.innerHTML = runs.length ? runs.map(renderCrewRun).join('') : '<p class="setup-footnote">No runs yet. Give the crew its first objective.</p>';
+    list.querySelectorAll('[data-crew-decision]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const card = button.closest('[data-run-id]');
+        card.querySelectorAll('button').forEach(item => { item.disabled = true; });
+        setupMessage(`${button.dataset.crewDecision === 'APPROVE' ? 'Approving' : 'Rejecting'} run…`);
+        try {
+          await hyperCrewApi(`/runs/${encodeURIComponent(card.dataset.runId)}/decisions`, { method: 'POST', body: { decision: button.dataset.crewDecision } });
+          setupMessage(button.dataset.crewDecision === 'APPROVE' ? 'Approved. Operator completed in safe dry-run mode.' : 'Run rejected.', 'is-success');
+          await loadCrewRuns(focusRunId);
+        } catch (error) {
+          setupMessage(error.message, 'is-error');
+          card.querySelectorAll('button').forEach(item => { item.disabled = false; });
+        }
+      });
+    });
+  } catch (error) {
+    list.innerHTML = '';
+    setupMessage(error.message, 'is-error');
+  }
+}
+
+function renderHyperCrew(focusRunId = '') {
+  const app = document.querySelector('#app');
+  app.innerHTML = `
+    <div class="topbar">
+      <button class="topbar__back" data-home>‹ Home</button>
+      <span class="setup-badge">Human approval</span>
+    </div>
+    <section class="setup-hero crew-hero">
+      <span class="setup-hero__icon">${icon('brain')}</span>
+      <h1>Hyper Crew</h1>
+      <p>Researcher → Strategist → Copywriter → Reviewer → Distribution Manager. Nothing publishes without you.</p>
+    </section>
+    <section class="setup-card">
+      <div id="setup-message" class="setup-message"></div>
+      ${focusRunId ? '' : `<form id="crew-form">
+        <label for="crew-project">Project</label>
+        <select id="crew-project"><option value="astel-business">Astel Business</option><option value="battle-box">Battle Box</option></select>
+        <label for="crew-objective">Objective</label>
+        <textarea id="crew-objective" maxlength="2000" rows="5" placeholder="What should the team research, plan and prepare?" required></textarea>
+        <button type="submit" class="setup-primary">Run complete crew</button>
+      </form>`}
+    </section>
+    <section id="crew-runs" class="crew-runs"></section>`;
+
+  document.querySelector('[data-home]').addEventListener('click', render);
+  const form = document.querySelector('#crew-form');
+  form?.addEventListener('submit', async event => {
+    event.preventDefault();
+    setSetupBusy(true);
+    setupMessage('Crew is working. Deep research and review can take a few minutes…');
+    try {
+      const created = await hyperCrewApi('/runs', { method: 'POST', body: {
+        projectId: document.querySelector('#crew-project').value,
+        objective: document.querySelector('#crew-objective').value.trim(),
+      } });
+      await hyperCrewApi(`/runs/${encodeURIComponent(created.id)}/start`, { method: 'POST', body: {} });
+      document.querySelector('#crew-objective').value = '';
+      setupMessage('Package ready for your approval.', 'is-success');
+      await loadCrewRuns();
+      tg?.HapticFeedback?.notificationOccurred?.('success');
+    } catch (error) {
+      setupMessage(error.message, 'is-error');
+    } finally {
+      setSetupBusy(false);
+    }
+  });
+  loadCrewRuns(focusRunId);
 }
 
 function setupMessage(text, type = '') {
@@ -544,6 +659,7 @@ function bindEvents() {
       const item = modules.find((module) => module.id === button.dataset.module);
       if (item.id === 'settings') return renderTelegramSetup();
       if (item.id === 'research') return renderTelegramResearch();
+      if (item.id === 'crew') return renderHyperCrew();
       showSheet(item.title, `${item.description}. This block is already modular — we can connect real functionality here without rebuilding the Home screen.`);
     });
   });
@@ -600,5 +716,7 @@ function initTelegram() {
 
 initTelegram();
 const copilotDraftId = new URLSearchParams(window.location.search).get('copilotDraft');
+const crewRunId = new URLSearchParams(window.location.search).get('crewRun');
 if (/^[a-f0-9]{32}$/.test(copilotDraftId || '')) renderCopilotEditor(copilotDraftId);
+else if (/^[a-f0-9-]{20,64}$/i.test(crewRunId || '')) renderHyperCrew(crewRunId);
 else render();

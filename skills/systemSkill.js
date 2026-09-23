@@ -49,6 +49,7 @@ function createSystemSkill({ policy, conversationStore, redisClient, miniAppUrl 
         "/think <задача> — усиленный AI",
         "/research <запрос> — свежий веб-ресерч",
         "/leads <что искать> — публичные B2B лиды",
+        "/crew <задача> — запустить всю AI-команду",
         "/status — статус",
         "/reset — очистить память диалога",
         "/help — помощь",

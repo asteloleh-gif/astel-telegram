@@ -25,6 +25,8 @@ const { createTelegramResearchProxy } = require("./setup/telegramResearchProxy")
 const { planTelegramQueries, runTelegramAiSearch } = require("./research/telegramAiSearch");
 const { createMessageStore } = require("./storage/messageStore");
 const { createApprovalController } = require("./copilot/approvalController");
+const { createHyperCrewClient, HyperCrewError } = require("./connectors/hyperCrewClient");
+const { createHyperCrewSkill } = require("./skills/hyperCrewSkill");
 
 function createApp({
   telegramAdapter,
@@ -67,8 +69,14 @@ function createApp({
   });
   const engine = aiEngine || createAIEngine({ provider });
   const telegramPublisher = publisher || createTelegramPublisher({ telegramAdapter: telegram, reservationStore: reservation, logger: log, policy });
+  const hyperCrew = createHyperCrewClient({
+    baseUrl: env.HYPER_CREW_BASE_URL,
+    apiToken: env.HYPER_CREW_API_TOKEN,
+    timeoutMs: Number(env.HYPER_CREW_TIMEOUT_MS || 180000),
+  });
   const skills = skillRegistry || createSkillRegistry([
     createSystemSkill({ policy, conversationStore: memory, redisClient: redis, miniAppUrl: env.MINI_APP_URL || env.PUBLIC_BASE_URL || "" }),
+    createHyperCrewSkill({ client: hyperCrew, miniAppUrl: env.MINI_APP_URL || env.PUBLIC_BASE_URL || "", logger: log }),
     createResearchSkill({ provider, conversationStore: memory, logger: log, policy }),
     createAIChatSkill({ aiEngine: engine, conversationStore: memory, logger: log, policy }),
   ]);
@@ -100,13 +108,14 @@ function createApp({
       ok: redisUp,
       service: "astel-telegram",
       product: "Astel Assistant",
-      version: "0.4.0",
+      version: "0.5.0",
       configured,
       botEnabled: policy.botEnabled,
       dryRun: policy.botDryRun,
       redisStatus: redisUp ? "up" : "down",
       messageStoreConfigured: messageStore.isConfigured(),
       copilotApprovalEnabled: env.COPILOT_APPROVAL_ENABLED === "true",
+      hyperCrewConfigured: hyperCrew.isConfigured(),
       aiProvider: policy.aiProvider,
       aiModels: { chat: policy.openaiChatModel, power: policy.openaiPowerModel },
       skills: skills.list(),
@@ -120,6 +129,43 @@ function createApp({
       return res.status(status >= 400 && status < 600 ? status : 502).json({ error: error?.message || "TELEGRAM_RESEARCH_SETUP_FAILED" });
     }
   }
+
+  async function runHyperCrewAction(res, action) {
+    try { return res.json(await action()); }
+    catch (error) {
+      const status = error instanceof HyperCrewError ? error.status : 502;
+      return res.status(status).json({ error: error?.code || "HYPER_CREW_PROXY_FAILED", message: error?.message || "Hyper Crew request failed" });
+    }
+  }
+
+  app.get("/api/hyper-crew/status", telegramSetupGuard, async (_req, res) => {
+    if (!hyperCrew.isConfigured()) return res.status(503).json({ error: "HYPER_CREW_NOT_CONFIGURED" });
+    await runHyperCrewAction(res, async () => ({ configured: true, health: await hyperCrew.health() }));
+  });
+  app.get("/api/hyper-crew/projects", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listProjects()));
+  app.get("/api/hyper-crew/agents", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listAgents()));
+  app.get("/api/hyper-crew/connectors", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listConnectors()));
+  app.get("/api/hyper-crew/runs", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listRuns()));
+  app.get("/api/hyper-crew/runs/:id", telegramSetupGuard, async (req, res) => runHyperCrewAction(res, () => hyperCrew.getRun(req.params.id)));
+  app.post("/api/hyper-crew/runs", telegramSetupGuard, async (req, res) => {
+    const projectId = String(req.body?.projectId || "").trim();
+    const objective = String(req.body?.objective || "").trim();
+    if (!projectId || !objective) return res.status(400).json({ error: "PROJECT_AND_OBJECTIVE_REQUIRED" });
+    if (objective.length > 2000) return res.status(400).json({ error: "OBJECTIVE_TOO_LONG" });
+    await runHyperCrewAction(res, () => hyperCrew.createRun({
+      projectId,
+      objective,
+      idempotencyKey: String(req.body?.idempotencyKey || `miniapp:${req.telegramMiniAppUser?.id || "owner"}:${Date.now()}`),
+      requestedBy: `miniapp:${req.telegramMiniAppUser?.id || "owner"}`,
+      input: { source: "astel-mini-app" },
+    }));
+  });
+  app.post("/api/hyper-crew/runs/:id/start", telegramSetupGuard, async (req, res) => runHyperCrewAction(res, () => hyperCrew.startRun(req.params.id)));
+  app.post("/api/hyper-crew/runs/:id/decisions", telegramSetupGuard, async (req, res) => {
+    const decision = String(req.body?.decision || "").toUpperCase();
+    if (!["APPROVE", "REJECT"].includes(decision)) return res.status(400).json({ error: "INVALID_DECISION" });
+    await runHyperCrewAction(res, () => hyperCrew.decideRun(req.params.id, { decision, decidedBy: `miniapp:${req.telegramMiniAppUser?.id || "owner"}`, note: req.body?.note || null }));
+  });
 
   async function syncMessages({ periodHours = 720, limitPerSource = 100, sources } = {}) {
     if (!messageStore.isConfigured()) throw new Error("MESSAGE_STORE_NOT_CONFIGURED");
@@ -263,6 +309,7 @@ function createApp({
     messageStore,
     syncMessages,
     copilot,
+    hyperCrew,
   };
 }
 

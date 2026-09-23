@@ -2,7 +2,7 @@
 
 Private owner-only Telegram client for **Astel Assistant**.
 
-## Current capabilities — v0.3.0
+## Current capabilities — v0.5.0
 
 - Telegram Bot API webhook client
 - owner-only access control
@@ -11,6 +11,8 @@ Private owner-only Telegram client for **Astel Assistant**.
 - OpenAI Responses API chat
 - `/research <query>` for fresh web research
 - `/leads <query>` for public B2B lead research
+- `/crew <objective>` for the complete Astel Business AI team
+- `/crew battle <objective>` for the Battle Box team
 - `/status`, `/reset`, `/help`
 - owner-only Threads Copilot approval inbox with immutable approve/edit/skip decisions
 - Railway deployment with healthcheck and webhook auto-registration
@@ -25,6 +27,7 @@ Telegram Update
   -> skill registry
        -> system
        -> research / lead hunter
+       -> hyper-crew
        -> ai-chat
   -> Telegram publisher
   -> confirmed-publish memory commit
@@ -50,6 +53,16 @@ Research uses OpenAI-hosted web search. Lead Hunter is restricted to lawful publ
 Copy `.env.example` and provide real secrets only in the hosting environment. Never commit tokens.
 
 Required live secrets/config include `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_ID`, `OPENAI_API_KEY`, `REDIS_URL`, `PUBLIC_BASE_URL`, and `TELEGRAM_WEBHOOK_SECRET`.
+
+Hyper Crew is optional and fails closed when it is not configured:
+
+```env
+HYPER_CREW_BASE_URL=http://astel-hyper-crew.railway.internal:3000
+HYPER_CREW_API_TOKEN=replace-with-a-long-random-token
+HYPER_CREW_TIMEOUT_MS=180000
+```
+
+The Mini App uses owner-authenticated `/api/hyper-crew/*` proxy routes, so the internal bearer token is never exposed to browser JavaScript. Crew output stops at human approval; the operator remains dry-run until a publishing connector is configured separately.
 
 ## Run
 
