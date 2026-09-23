@@ -14,6 +14,5 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npm test
-      - run: npm install --prefix workers/telegram-research
+      - run: npm test\n      - run: node --check server.js && node --check public/home-v2.js && node --check connectors/hyperCrewClient.js\n      - run: npm install --prefix workers/telegram-research
       - run: npm test --prefix workers/telegram-research
