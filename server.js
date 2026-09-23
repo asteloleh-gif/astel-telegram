@@ -27,6 +27,7 @@ const { createMessageStore } = require("./storage/messageStore");
 const { createApprovalController } = require("./copilot/approvalController");
 const { createHyperCrewClient, HyperCrewError } = require("./connectors/hyperCrewClient");
 const { createHyperCrewSkill } = require("./skills/hyperCrewSkill");
+const { isHyperCrewGroupChat, handleHyperCrewGroupChat } = require("./skills/hyperCrewGroupChat");
 
 function createApp({
   telegramAdapter,
@@ -41,6 +42,7 @@ function createApp({
   skillRegistry,
   assistantPipeline,
   messageStore: providedMessageStore,
+  hyperCrewClient,
   logger,
   env = process.env,
 } = {}) {
@@ -69,7 +71,7 @@ function createApp({
   });
   const engine = aiEngine || createAIEngine({ provider });
   const telegramPublisher = publisher || createTelegramPublisher({ telegramAdapter: telegram, reservationStore: reservation, logger: log, policy });
-  const hyperCrew = createHyperCrewClient({
+  const hyperCrew = hyperCrewClient || createHyperCrewClient({
     baseUrl: env.HYPER_CREW_BASE_URL,
     apiToken: env.HYPER_CREW_API_TOKEN,
     timeoutMs: Number(env.HYPER_CREW_TIMEOUT_MS || 180000),
@@ -108,7 +110,7 @@ function createApp({
       ok: redisUp,
       service: "astel-telegram",
       product: "Astel Assistant",
-      version: "0.5.0",
+      version: "0.5.1",
       configured,
       botEnabled: policy.botEnabled,
       dryRun: policy.botDryRun,
@@ -308,6 +310,19 @@ function createApp({
       }
       const safetyResult = await runSafetyPipeline({ dedupeStore: dedupe, reservationStore: reservation, cooldownStore: cooldown, logger: log }, event);
       if (safetyResult.action !== "SAFE_STOP") return;
+
+      if (isHyperCrewGroupChat(event, { chatId: env.HYPER_CREW_TELEGRAM_CHAT_ID })) {
+        await handleHyperCrewGroupChat({
+          event,
+          client: hyperCrew,
+          conversationStore: memory,
+          telegramAdapter: telegram,
+          projectId: env.HYPER_CREW_TELEGRAM_PROJECT_ID || "astel-business",
+          logger: log,
+        });
+        return;
+      }
+
       await assistant.run(event);
     } catch (error) {
       log.error({ traceId: null, reasonCode: "UNCAUGHT_WEBHOOK_ERROR", conversationId: null, messageId: null, userId: null, extra: { error: error?.message || String(error) } });
