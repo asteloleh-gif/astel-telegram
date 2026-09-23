@@ -43,6 +43,34 @@ function formatApproval(run, miniAppUrl = "") {
   };
 }
 
+function formatFailure(run, miniAppUrl = "") {
+  const review = run?.outputs?.reviewer || {};
+  const code = run?.error?.message || "UNKNOWN_ERROR";
+  const explanations = {
+    CONTENT_REVIEW_REVISE: "Reviewer запросил повторную доработку. Автоматический цикл остановлен, чтобы не сжигать бюджет.",
+    CONTENT_REVIEW_REJECT: "Reviewer отклонил пакет как неподходящий или недостаточно подтверждённый.",
+  };
+  const instructions = Array.isArray(review.revisionInstructions) ? review.revisionInstructions : [];
+  const lines = [
+    "Hyper Crew остановил задачу ⚠️",
+    `Проект: ${run?.projectId || "unknown"}`,
+    `Статус: ${run?.status || "FAILED"}`,
+    `Run: ${run?.id || "unknown"}`,
+    `Команда: ${run?.stages?.length || 0} этапов · ${run?.usage?.totalTokens || 0} токенов`,
+    "",
+    explanations[code] || `Ошибка: ${code}`,
+    ...(review.notes ? ["", `Reviewer: ${review.notes}`] : []),
+    ...(instructions.length ? ["", "Что исправить:", ...instructions.slice(0, 5).map(item => `• ${item}`)] : []),
+    "",
+    "Ничего не опубликовано.",
+  ];
+  const url = String(miniAppUrl || "").trim().replace(/\/+$/, "");
+  return {
+    text: lines.join("\n").slice(0, 3950),
+    replyMarkup: url && run?.id ? { inline_keyboard: [[{ text: "🧠 Открыть run", web_app: { url: `${url}?crewRun=${encodeURIComponent(run.id)}` } }]] } : null,
+  };
+}
+
 function createHyperCrewSkill({ client, miniAppUrl = "", logger } = {}) {
   if (!client) throw new Error("hyperCrewSkill requires client");
   return {
@@ -70,7 +98,22 @@ function createHyperCrewSkill({ client, miniAppUrl = "", logger } = {}) {
         requestedBy: `telegram:${event.userId || "owner"}`,
         input: { source: "astel-assistant", conversationId: event.conversationId },
       });
-      const run = await client.startRun(created.id);
+      let run;
+      try {
+        run = await client.startRun(created.id);
+      } catch (error) {
+        const failedRun = await client.getRun(created.id).catch(() => null);
+        if (!failedRun || failedRun.status !== "FAILED") throw error;
+        logger?.warn?.({
+          traceId: event.traceId,
+          reasonCode: "HYPER_CREW_RUN_FAILED",
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          userId: event.userId,
+          extra: { runId: failedRun.id, projectId: failedRun.projectId, error: failedRun.error?.message || error.message },
+        });
+        return { ...formatFailure(failedRun, miniAppUrl), rememberAssistant: false };
+      }
       logger?.info?.({
         traceId: event.traceId,
         reasonCode: "HYPER_CREW_RUN_READY",
@@ -84,4 +127,4 @@ function createHyperCrewSkill({ client, miniAppUrl = "", logger } = {}) {
   };
 }
 
-module.exports = { createHyperCrewSkill, parseCrewCommand, formatApproval };
+module.exports = { createHyperCrewSkill, parseCrewCommand, formatApproval, formatFailure };
