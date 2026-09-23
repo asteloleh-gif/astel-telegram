@@ -166,6 +166,158 @@
     await loadList();
   }
 
+
+  const CREW_CHAT_STORAGE_KEY = 'astel.crew-chat.v1';
+
+  function loadCrewChatHistory() {
+    try {
+      const value = JSON.parse(localStorage.getItem(CREW_CHAT_STORAGE_KEY) || '[]');
+      return Array.isArray(value) ? value.slice(-40) : [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  function saveCrewChatHistory(history) {
+    localStorage.setItem(CREW_CHAT_STORAGE_KEY, JSON.stringify(history.slice(-40)));
+  }
+
+  function crewChatMessage(item) {
+    if (item.role === 'user') {
+      return `<div class="crew-chat-message is-user"><div class="crew-chat-bubble">${esc(item.text)}</div></div>`;
+    }
+    const agentId = item.agentId || 'orchestrator';
+    const name = item.agentName || 'Kevin CEO';
+    const title = item.agentTitle || 'Orchestrator';
+    return `<div class="crew-chat-message is-agent">
+      <div class="crew-chat-agent">${agentEmoji[agentId] || '🤖'} <strong>${esc(name)}</strong><span>${esc(title)}</span></div>
+      <div class="crew-chat-bubble">${esc(item.text).replaceAll('\n','<br>')}</div>
+    </div>`;
+  }
+
+  function openCrewChat() {
+    document.querySelector('.sheet-backdrop')?.remove();
+    document.querySelector('.crew-chat-overlay')?.remove();
+
+    const overlay = document.createElement('section');
+    overlay.className = 'crew-chat-overlay';
+    overlay.setAttribute('aria-label', 'Crew Chat');
+    overlay.innerHTML = `
+      <header class="crew-chat-header">
+        <button class="crew-chat-back" data-chat-back>‹ Crew</button>
+        <div><strong>Crew Chat</strong><span>Kevin routes by default · call anyone by name</span></div>
+        <button class="crew-chat-clear" data-chat-clear>Clear</button>
+      </header>
+      <div class="crew-chat-chips">
+        <button data-chat-preset="Кевин ">👔 Kevin</button>
+        <button data-chat-preset="Томми ">🕵️ Tommy</button>
+        <button data-chat-preset="Серёга ">✍️ Sergio</button>
+        <button data-chat-preset="Юки ">🎨 Yuki</button>
+        <button data-chat-preset="Эдик ">📊 Eddie</button>
+      </div>
+      <main class="crew-chat-list" data-chat-list></main>
+      <form class="crew-chat-composer" data-chat-form>
+        <textarea data-chat-input rows="1" maxlength="4000" placeholder="Напиши: «Юки сделай обложку»"></textarea>
+        <button type="submit" aria-label="Send">↑</button>
+      </form>`;
+    document.body.appendChild(overlay);
+
+    const list = overlay.querySelector('[data-chat-list]');
+    const input = overlay.querySelector('[data-chat-input]');
+    const form = overlay.querySelector('[data-chat-form]');
+    let history = loadCrewChatHistory();
+
+    function renderHistory() {
+      if (!history.length) {
+        list.innerHTML = `<div class="crew-chat-welcome">
+          <div class="crew-chat-welcome__avatar">👔</div>
+          <strong>Kevin CEO</strong>
+          <p>Пиши мне без имени — я отвечу как orchestrator. Или обращайся напрямую: «Юки…», «Томми…», «Серёга…», «Эдик…».</p>
+        </div>`;
+      } else {
+        list.innerHTML = history.map(crewChatMessage).join('');
+      }
+      list.scrollTop = list.scrollHeight;
+    }
+
+    overlay.querySelector('[data-chat-back]').addEventListener('click', () => {
+      overlay.remove();
+      openCrew();
+    });
+    overlay.querySelector('[data-chat-clear]').addEventListener('click', () => {
+      history = [];
+      saveCrewChatHistory(history);
+      renderHistory();
+    });
+    overlay.querySelectorAll('[data-chat-preset]').forEach(button => {
+      button.addEventListener('click', () => {
+        input.value = button.dataset.chatPreset;
+        input.focus();
+      });
+    });
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+
+      const priorHistory = history.slice(-12).map(item => ({
+        role: item.role,
+        text: item.text,
+        agentId: item.agentId || null,
+      }));
+
+      history.push({ role: 'user', text });
+      saveCrewChatHistory(history);
+      input.value = '';
+      renderHistory();
+
+      const pending = document.createElement('div');
+      pending.className = 'crew-chat-message is-agent is-pending';
+      pending.innerHTML = '<div class="crew-chat-agent">✦ <strong>Hyper Crew</strong><span>thinking…</span></div><div class="crew-chat-bubble">…</div>';
+      list.appendChild(pending);
+      list.scrollTop = list.scrollHeight;
+      form.querySelector('button').disabled = true;
+      input.disabled = true;
+
+      try {
+        const result = await crewApi('/chat', {
+          method: 'POST',
+          body: { text, projectId: 'astel-business', history: priorHistory },
+        });
+        pending.remove();
+        history.push({
+          role: 'assistant',
+          text: result.reply || '',
+          agentId: result.target?.id || 'orchestrator',
+          agentName: result.target?.name || 'Kevin CEO',
+          agentTitle: result.target?.title || 'Orchestrator',
+        });
+        saveCrewChatHistory(history);
+        renderHistory();
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light');
+      } catch (error) {
+        pending.remove();
+        history.push({
+          role: 'assistant',
+          text: `Ошибка Crew Chat: ${error.message}`,
+          agentId: 'orchestrator',
+          agentName: 'Kevin CEO',
+          agentTitle: 'System',
+        });
+        saveCrewChatHistory(history);
+        renderHistory();
+      } finally {
+        form.querySelector('button').disabled = false;
+        input.disabled = false;
+        input.focus();
+      }
+    });
+
+    renderHistory();
+    input.focus();
+  }
+
   function openCrew() {
     const existing = document.querySelector('.sheet-backdrop');
     if (existing) existing.remove();
@@ -184,7 +336,7 @@
     const close = () => backdrop.remove();
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
     backdrop.querySelector('.sheet__close').addEventListener('click', close);
-    backdrop.querySelector('[data-crew-chat]').addEventListener('click', () => alert('Crew Chat — next implementation step'));
+    backdrop.querySelector('[data-crew-chat]').addEventListener('click', openCrewChat);
     backdrop.querySelector('[data-crew-agents]').addEventListener('click', openManageAgents);
     backdrop.querySelector('[data-crew-tasks]').addEventListener('click', () => alert('Tasks & Runs — next implementation step'));
   }

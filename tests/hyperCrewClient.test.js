@@ -43,3 +43,21 @@ test("hyper crew client updates and resolves agent profiles", async () => {
   assert.equal(calls[1].url, "http://crew.internal/v1/agents/visual");
   assert.equal(calls[1].options.method, "PATCH");
 });
+
+
+test("hyper crew client sends direct chat input", async () => {
+  const calls = [];
+  const client = createHyperCrewClient({
+    baseUrl: "http://crew.internal",
+    apiToken: "secret-token",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({ target: { id: "visual" }, reply: "done" }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  const result = await client.chat({ text: "Юки сделай обложку", projectId: "astel-business", history: [] });
+  assert.equal(result.target.id, "visual");
+  assert.equal(calls[0].url, "http://crew.internal/v1/chat");
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(JSON.parse(calls[0].options.body).text, "Юки сделай обложку");
+});
