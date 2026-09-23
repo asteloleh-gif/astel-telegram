@@ -33,6 +33,7 @@ async function handleHyperCrewGroupChat({
   client,
   conversationStore,
   telegramAdapter,
+  managedBotManager = null,
   projectId = "astel-business",
   logger,
 } = {}) {
@@ -58,21 +59,34 @@ async function handleHyperCrewGroupChat({
   const image = (Array.isArray(result?.artifacts) ? result.artifacts : [])
     .find(item => item?.type === "image" && /^data:image\/(png|jpeg|webp);base64,/.test(String(item.dataUrl || "")));
 
-  if (image) {
-    await telegramAdapter.sendPhoto({
-      chatId: event.conversationId,
-      dataUrl: image.dataUrl,
-      caption: message.slice(0, 1024),
-      replyToMessageId: event.messageId,
-      threadId: event.threadId,
-    });
-  } else {
-    await telegramAdapter.sendMessage({
-      chatId: event.conversationId,
-      text: message.slice(0, 4096),
-      replyToMessageId: event.messageId,
-      threadId: event.threadId,
-    });
+  const sentAsManagedAgent = managedBotManager?.sendAsAgent
+    ? await managedBotManager.sendAsAgent({
+        agentId: result?.target?.id || null,
+        chatId: event.conversationId,
+        text: image ? message.slice(0, 1024) : message.slice(0, 4096),
+        dataUrl: image?.dataUrl || null,
+        replyToMessageId: event.messageId,
+        threadId: event.threadId,
+      })
+    : false;
+
+  if (!sentAsManagedAgent) {
+    if (image) {
+      await telegramAdapter.sendPhoto({
+        chatId: event.conversationId,
+        dataUrl: image.dataUrl,
+        caption: message.slice(0, 1024),
+        replyToMessageId: event.messageId,
+        threadId: event.threadId,
+      });
+    } else {
+      await telegramAdapter.sendMessage({
+        chatId: event.conversationId,
+        text: message.slice(0, 4096),
+        replyToMessageId: event.messageId,
+        threadId: event.threadId,
+      });
+    }
   }
 
   await conversationStore.append(event, {
@@ -90,6 +104,7 @@ async function handleHyperCrewGroupChat({
       agentId: result?.target?.id || null,
       agentName: result?.target?.name || null,
       artifactCount: Array.isArray(result?.artifacts) ? result.artifacts.length : 0,
+      sentAsManagedAgent,
     },
   });
 

@@ -95,3 +95,32 @@ test("sends Yuki image artifact as Telegram photo", async () => {
   assert.equal(calls.sendPhoto[0].chatId, "-5283133914");
   assert.match(calls.sendPhoto[0].caption, /Yuki Pixel/);
 });
+
+
+test("uses managed agent identity before falling back to Kevin", async () => {
+  const calls = { managed: [], fallback: [] };
+  await handleHyperCrewGroupChat({
+    event: event({ text: "Серёга перепиши" }),
+    client: {
+      chat: async () => ({
+        target: { id: "copywriter", name: "Sergio Contentmaker", title: "Writer" },
+        reply: "Готово",
+        artifacts: [],
+      }),
+    },
+    conversationStore: {
+      read: async () => [],
+      append: async () => {},
+    },
+    telegramAdapter: {
+      sendMessage: async input => { calls.fallback.push(input); },
+      sendPhoto: async input => { calls.fallback.push(input); },
+    },
+    managedBotManager: {
+      sendAsAgent: async input => { calls.managed.push(input); return true; },
+    },
+  });
+  assert.equal(calls.managed.length, 1);
+  assert.equal(calls.managed[0].agentId, "copywriter");
+  assert.equal(calls.fallback.length, 0);
+});

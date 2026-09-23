@@ -30,6 +30,7 @@ function buildNormalizedEvent(message, { ownerUserId = null } = {}) {
     messageId: message.messageId || null,
     parentId: message.parentId || null,
     threadId: message.threadId || null,
+    chatType: message.chatType || null,
     text: message.text || "",
     isOwner: Boolean(ownerUserId && message.userId && String(ownerUserId) === String(message.userId)),
   };
