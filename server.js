@@ -159,6 +159,14 @@ function createApp({
     };
     await runHyperCrewAction(res, () => hyperCrew.updateAgent(req.params.id, patch));
   });
+  app.post("/api/hyper-crew/chat", telegramSetupGuard, async (req, res) => {
+    const text = String(req.body?.text || "").trim();
+    if (!text) return res.status(400).json({ error: "CHAT_TEXT_REQUIRED" });
+    if (text.length > 4000) return res.status(400).json({ error: "CHAT_TEXT_TOO_LONG" });
+    const history = Array.isArray(req.body?.history) ? req.body.history.slice(-12) : [];
+    const projectId = String(req.body?.projectId || "astel-business").trim();
+    await runHyperCrewAction(res, () => hyperCrew.chat({ text, projectId, history }));
+  });
   app.get("/api/hyper-crew/connectors", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listConnectors()));
   app.get("/api/hyper-crew/runs", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listRuns()));
   app.get("/api/hyper-crew/runs/:id", telegramSetupGuard, async (req, res) => runHyperCrewAction(res, () => hyperCrew.getRun(req.params.id)));
