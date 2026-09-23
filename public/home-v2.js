@@ -10,6 +10,162 @@
     </button>`;
   }
 
+
+  const agentEmoji = {
+    orchestrator: '👔',
+    researcher: '🕵️',
+    strategist: '🧠',
+    copywriter: '✍️',
+    reviewer: '👷',
+    'distribution-manager': '🌍',
+    visual: '🎨',
+    analytics: '📊',
+    'router-parser': '🧩',
+  };
+
+  function esc(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function crewHeaders() {
+    return {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      'x-telegram-init-data': window.Telegram?.WebApp?.initData || '',
+    };
+  }
+
+  async function crewApi(path, { method = 'GET', body } = {}) {
+    const response = await fetch(`/api/hyper-crew${path}`, {
+      method,
+      headers: crewHeaders(),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.message || payload?.error || `Hyper Crew request failed (${response.status})`);
+    return payload;
+  }
+
+  function renderAgentRow(agent) {
+    const aliases = (agent.aliases || []).slice(0, 3).join(' · ');
+    const title = agent.title || agent.role || agent.id;
+    return `<button class="crew-agent-row" data-agent-id="${esc(agent.id)}">
+      <span class="crew-agent-row__emoji">${agentEmoji[agent.id] || '🤖'}</span>
+      <span class="crew-agent-row__body">
+        <strong>${esc(agent.name || agent.id)}</strong>
+        <span>${esc(title)}</span>
+        <small>${esc(agent.mention || '')}${aliases ? ` · ${esc(aliases)}` : ''}</small>
+      </span>
+      <span class="crew-agent-row__status ${agent.enabled === false ? 'is-off' : ''}">${agent.enabled === false ? 'Off' : 'Active'}</span>
+      <span class="quick-action__arrow">›</span>
+    </button>`;
+  }
+
+  function renderAgentList(root, agents) {
+    const core = agents.filter(agent => agent.wave !== 'next');
+    const next = agents.filter(agent => agent.wave === 'next');
+    root.innerHTML = `
+      <div class="crew-agent-head">
+        <div><h3>Manage Agents</h3><p>Names, jobs and Russian/English call signs.</p></div>
+        <button class="crew-agent-close" data-agent-close aria-label="Close">×</button>
+      </div>
+      <div class="crew-agent-section"><span class="crew-agent-section__label">CORE CREW</span>${core.map(renderAgentRow).join('')}</div>
+      ${next.length ? `<div class="crew-agent-section"><span class="crew-agent-section__label">NEXT WAVE</span>${next.map(renderAgentRow).join('')}</div>` : ''}
+      <p class="crew-agent-note">System IDs stay fixed. You can rename the people and their call signs without breaking the workflow.</p>`;
+  }
+
+  function renderAgentEditor(root, agent, onBack) {
+    const aliases = (agent.aliases || []).join(', ');
+    root.innerHTML = `
+      <div class="crew-agent-head">
+        <button class="crew-agent-back" data-agent-back>‹ Agents</button>
+        <button class="crew-agent-close" data-agent-close aria-label="Close">×</button>
+      </div>
+      <div class="crew-agent-profile">
+        <div class="crew-agent-profile__avatar">${agentEmoji[agent.id] || '🤖'}</div>
+        <div><h3>${esc(agent.name || agent.id)}</h3><p>${esc(agent.role || agent.title || agent.id)} · ${esc(agent.id)}</p></div>
+      </div>
+      <form class="crew-agent-form" data-agent-form>
+        <label>Name<input name="name" maxlength="80" value="${esc(agent.name || '')}" required></label>
+        <label>Job title<input name="title" maxlength="80" value="${esc(agent.title || agent.role || '')}" required></label>
+        <label>What this agent does<textarea name="description" maxlength="500" rows="3">${esc(agent.description || '')}</textarea></label>
+        <label>Call signs / aliases<textarea name="aliases" rows="4" placeholder="юки, yuki, юки пиксель">${esc(aliases)}</textarea></label>
+        <small>Examples: «юки сделай обложку», «Серёга перепиши», «Кевин собери команду».</small>
+        <label class="crew-agent-toggle"><input type="checkbox" name="enabled" ${agent.enabled === false ? '' : 'checked'}><span>Agent enabled</span></label>
+        <div class="crew-agent-message" data-agent-message></div>
+        <button class="sheet__close crew-agent-save" type="submit">Save agent</button>
+      </form>`;
+
+    root.querySelector('[data-agent-back]').addEventListener('click', onBack);
+    root.querySelector('[data-agent-form]').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('.crew-agent-save');
+      const message = form.querySelector('[data-agent-message]');
+      button.disabled = true;
+      message.textContent = 'Saving…';
+      try {
+        const values = new FormData(form);
+        const payload = {
+          name: String(values.get('name') || '').trim(),
+          title: String(values.get('title') || '').trim(),
+          description: String(values.get('description') || '').trim(),
+          aliases: String(values.get('aliases') || '').split(/[,\n]/).map(item => item.trim()).filter(Boolean),
+          enabled: form.elements.enabled.checked,
+        };
+        const result = await crewApi(`/agents/${encodeURIComponent(agent.id)}`, { method: 'PATCH', body: payload });
+        message.textContent = 'Saved ✓';
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+        setTimeout(() => onBack(result.agent), 350);
+      } catch (error) {
+        message.textContent = error.message;
+        message.classList.add('is-error');
+        button.disabled = false;
+      }
+    });
+  }
+
+  async function openManageAgents() {
+    document.querySelector('.sheet-backdrop')?.remove();
+    const backdrop = document.createElement('div');
+    backdrop.className = 'sheet-backdrop';
+    backdrop.innerHTML = `<section class="sheet crew-agents-sheet" role="dialog" aria-modal="true" aria-label="Manage Agents">
+      <div class="sheet__handle"></div>
+      <div class="crew-agent-loading">Loading crew…</div>
+    </section>`;
+    document.body.appendChild(backdrop);
+    const root = backdrop.querySelector('.crew-agents-sheet');
+    const close = () => backdrop.remove();
+    backdrop.addEventListener('click', event => { if (event.target === backdrop) close(); });
+
+    async function loadList() {
+      root.innerHTML = '<div class="sheet__handle"></div><div class="crew-agent-loading">Loading crew…</div>';
+      try {
+        const payload = await crewApi('/agents');
+        renderAgentList(root, payload.agents || []);
+        root.querySelector('[data-agent-close]').addEventListener('click', close);
+        root.querySelectorAll('[data-agent-id]').forEach(button => {
+          button.addEventListener('click', () => {
+            const agent = (payload.agents || []).find(item => item.id === button.dataset.agentId);
+            if (!agent) return;
+            renderAgentEditor(root, agent, loadList);
+            root.querySelector('[data-agent-close]').addEventListener('click', close);
+          });
+        });
+      } catch (error) {
+        root.innerHTML = `<div class="sheet__handle"></div><div class="crew-agent-head"><div><h3>Manage Agents</h3><p class="crew-agent-error">${esc(error.message)}</p></div><button class="crew-agent-close" data-agent-close>×</button></div>`;
+        root.querySelector('[data-agent-close]').addEventListener('click', close);
+      }
+    }
+
+    await loadList();
+  }
+
   function openCrew() {
     const existing = document.querySelector('.sheet-backdrop');
     if (existing) existing.remove();
@@ -29,7 +185,7 @@
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
     backdrop.querySelector('.sheet__close').addEventListener('click', close);
     backdrop.querySelector('[data-crew-chat]').addEventListener('click', () => alert('Crew Chat — next implementation step'));
-    backdrop.querySelector('[data-crew-agents]').addEventListener('click', () => alert('Manage Agents — next implementation step'));
+    backdrop.querySelector('[data-crew-agents]').addEventListener('click', openManageAgents);
     backdrop.querySelector('[data-crew-tasks]').addEventListener('click', () => alert('Tasks & Runs — next implementation step'));
   }
 
