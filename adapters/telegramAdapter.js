@@ -77,6 +77,45 @@ function createTelegramAdapter({
     return request("sendMessage", body, { ambiguousOnNetworkError: true });
   }
 
+  async function sendPhoto({ chatId, dataUrl, caption = "", replyToMessageId = null, threadId = null }) {
+    if (!apiBase) throw new TelegramPublishError("TELEGRAM_BOT_TOKEN missing", { ambiguous: false });
+    const match = String(dataUrl || "").match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) throw new TelegramPublishError("sendPhoto requires a base64 image data URL", { ambiguous: false });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+    try {
+      const form = new FormData();
+      form.append("chat_id", String(chatId));
+      form.append("photo", new Blob([Buffer.from(match[2], "base64")], { type: match[1] }), match[1] === "image/jpeg" ? "yuki.jpg" : "yuki.png");
+      if (caption) form.append("caption", String(caption).slice(0, 1024));
+      if (replyToMessageId) form.append("reply_parameters", JSON.stringify({ message_id: Number(replyToMessageId) }));
+      if (threadId) form.append("message_thread_id", String(Number(threadId)));
+
+      const res = await fetchImpl(`${apiBase}/sendPhoto`, {
+        method: "POST",
+        body: form,
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        throw new TelegramPublishError(data?.description || `Telegram sendPhoto failed: ${res.status}`, {
+          code: data?.error_code || res.status,
+          ambiguous: false,
+        });
+      }
+      return data.result;
+    } catch (err) {
+      if (err instanceof TelegramPublishError) throw err;
+      throw new TelegramPublishError(
+        err?.name === "AbortError" ? "Telegram sendPhoto timed out" : (err?.message || "Telegram sendPhoto network error"),
+        { ambiguous: true }
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async function setWebhook({ url, secretToken = null }) {
     if (!url) throw new Error("setWebhook requires url");
     const body = {
@@ -96,7 +135,7 @@ function createTelegramAdapter({
     return request("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
   }
 
-  return { normalizeUpdate, sendMessage, setWebhook, getMe, answerCallbackQuery };
+  return { normalizeUpdate, sendMessage, sendPhoto, setWebhook, getMe, answerCallbackQuery };
 }
 
 module.exports = { createTelegramAdapter, TelegramPublishError };

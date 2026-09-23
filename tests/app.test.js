@@ -56,7 +56,7 @@ test("app: /health reports Redis up and exposes assistant metadata", async () =>
     assert.equal(res.status, 200);
     assert.equal(body.redisStatus, "up");
     assert.equal(body.product, "Astel Assistant");
-    assert.equal(body.version, "0.5.0");
+    assert.equal(body.version, "0.5.1");
     assert.equal(body.copilotApprovalEnabled, false);
     assert.equal(body.aiModels.chat, "gpt-5.6-luna");
     assert.equal(body.aiModels.power, "gpt-5.6-terra");
