@@ -179,7 +179,24 @@
   }
 
   function saveCrewChatHistory(history) {
-    localStorage.setItem(CREW_CHAT_STORAGE_KEY, JSON.stringify(history.slice(-40)));
+    const persistable = history.slice(-40).map(item => ({
+      role: item.role,
+      text: item.text,
+      agentId: item.agentId || null,
+      agentName: item.agentName || null,
+      agentTitle: item.agentTitle || null,
+    }));
+    localStorage.setItem(CREW_CHAT_STORAGE_KEY, JSON.stringify(persistable));
+  }
+
+  function renderCrewArtifacts(artifacts) {
+    return (Array.isArray(artifacts) ? artifacts : [])
+      .filter(artifact => artifact?.type === 'image' && /^data:image\/(png|jpeg|webp);base64,/.test(String(artifact.dataUrl || '')))
+      .map(artifact => `<div class="crew-chat-artifact">
+        <img src="${artifact.dataUrl}" alt="Generated visual by Yuki Pixel">
+        <span>Generated visual · ${esc(artifact.model || 'image model')}</span>
+      </div>`)
+      .join('');
   }
 
   function crewChatMessage(item) {
@@ -189,9 +206,10 @@
     const agentId = item.agentId || 'orchestrator';
     const name = item.agentName || 'Kevin CEO';
     const title = item.agentTitle || 'Orchestrator';
+    const artifacts = renderCrewArtifacts(item.artifacts);
     return `<div class="crew-chat-message is-agent">
       <div class="crew-chat-agent">${agentEmoji[agentId] || '🤖'} <strong>${esc(name)}</strong><span>${esc(title)}</span></div>
-      <div class="crew-chat-bubble">${esc(item.text).replaceAll('\n','<br>')}</div>
+      <div class="crew-chat-bubble">${esc(item.text).replaceAll('\n','<br>')}${artifacts}</div>
     </div>`;
   }
 
@@ -292,6 +310,7 @@
           agentId: result.target?.id || 'orchestrator',
           agentName: result.target?.name || 'Kevin CEO',
           agentTitle: result.target?.title || 'Orchestrator',
+          artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
         });
         saveCrewChatHistory(history);
         renderHistory();
