@@ -59,6 +59,8 @@ function createHyperCrewClient({
     health: () => request("/health", { authenticated: false, timeout: Math.min(timeoutMs, 5000) }),
     listProjects: () => request("/v1/projects"),
     listAgents: () => request("/v1/agents"),
+    resolveAgent: text => request("/v1/agents/resolve", { method: "POST", body: { text } }),
+    updateAgent: (id, input) => request(`/v1/agents/${encodeURIComponent(id)}`, { method: "PATCH", body: input }),
     listConnectors: () => request("/v1/connectors"),
     listRuns: () => request("/v1/runs"),
     getRun: id => request(`/v1/runs/${encodeURIComponent(id)}`),

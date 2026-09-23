@@ -23,3 +23,23 @@ test("hyper crew client reports missing configuration without making a request",
   const client = createHyperCrewClient({ baseUrl: "", apiToken: "" });
   await assert.rejects(() => client.listRuns(), error => error instanceof HyperCrewError && error.code === "HYPER_CREW_NOT_CONFIGURED");
 });
+
+
+test("hyper crew client updates and resolves agent profiles", async () => {
+  const calls = [];
+  const client = createHyperCrewClient({
+    baseUrl: "http://crew.internal",
+    apiToken: "secret-token",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  await client.resolveAgent("юки сделай обложку");
+  await client.updateAgent("visual", { name: "Yuki Pixel", aliases: ["юки", "yuki"] });
+  assert.equal(calls[0].url, "http://crew.internal/v1/agents/resolve");
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(JSON.parse(calls[0].options.body).text, "юки сделай обложку");
+  assert.equal(calls[1].url, "http://crew.internal/v1/agents/visual");
+  assert.equal(calls[1].options.method, "PATCH");
+});
