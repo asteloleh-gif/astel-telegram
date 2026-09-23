@@ -27,6 +27,8 @@ function createTelegramAdapter({
       updateId: update?.update_id != null ? String(update.update_id) : null,
       messageId: message.message_id != null ? String(message.message_id) : null,
       parentId: message.reply_to_message?.message_id != null ? String(message.reply_to_message.message_id) : null,
+      parentUserId: message.reply_to_message?.from?.id != null ? String(message.reply_to_message.from.id) : null,
+      parentUsername: message.reply_to_message?.from?.username || null,
       userId: from.id != null ? String(from.id) : null,
       username: from.username || null,
       chatId: chat.id != null ? String(chat.id) : null,
