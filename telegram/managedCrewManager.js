@@ -251,6 +251,34 @@ function createManagedCrewManager({
     return true;
   }
 
+  async function routeTextForEvent(event) {
+    const original = String(event?.text || "").trim();
+    if (!original) return original;
+
+    if (event?.parentUserId) {
+      const repliedBot = await store.findByBotUserId(event.parentUserId).catch(() => null);
+      if (repliedBot) {
+        const agent = CREW_MANAGED_AGENTS.find(item => item.id === repliedBot.agentId);
+        if (agent) return `${agent.name} ${original}`;
+      }
+    }
+
+    const records = await store.list().catch(() => []);
+    const lower = original.toLowerCase();
+    for (const record of records) {
+      const username = normalizeUsername(record.username);
+      if (!username) continue;
+      const mention = `@${username}`;
+      if (lower === mention || lower.startsWith(`${mention} `)) {
+        const agent = CREW_MANAGED_AGENTS.find(item => item.id === record.agentId);
+        if (!agent) continue;
+        const rest = original.slice(mention.length).trim();
+        return `${agent.name}${rest ? ` ${rest}` : ""}`;
+      }
+    }
+    return original;
+  }
+
   async function sendAsAgent({ agentId, chatId, text, dataUrl = null, replyToMessageId = null, threadId = null } = {}) {
     if (!agentId || agentId === "orchestrator") return false;
     const record = await store.get(agentId);
@@ -286,6 +314,7 @@ function createManagedCrewManager({
     sendSetupStatus,
     sendAutoSetupPromptOnce,
     listStatus,
+    routeTextForEvent,
     sendAsAgent,
     getManagedToken,
   };
