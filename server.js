@@ -376,7 +376,7 @@ function createApp({
 }
 
 async function start() {
-  const { app, logger, redisClient, telegramAdapter, messageStore, managedCrewBotStore, syncMessages, copilot } = createApp();
+  const { app, logger, redisClient, telegramAdapter, messageStore, managedCrewBotStore, managedCrew, syncMessages, copilot } = createApp();
 
   try { await redisClient.connect(); }
   catch (err) {
@@ -407,6 +407,15 @@ async function start() {
         const webhookUrl = `${publicBaseUrl}/telegram/webhook`;
         await telegramAdapter.setWebhook({ url: webhookUrl, secretToken: process.env.TELEGRAM_WEBHOOK_SECRET || null });
         logger.info({ traceId: null, reasonCode: "TELEGRAM_WEBHOOK_SET", conversationId: null, messageId: null, userId: null, extra: { webhookUrl } });
+
+        if (process.env.MANAGED_CREW_AUTO_SETUP_PROMPT === "true" && process.env.TELEGRAM_OWNER_ID) {
+          try {
+            const sent = await managedCrew.sendAutoSetupPromptOnce(process.env.TELEGRAM_OWNER_ID);
+            if (sent) logger.info({ traceId: null, reasonCode: "MANAGED_CREW_AUTO_PROMPT_SENT", conversationId: process.env.TELEGRAM_OWNER_ID, messageId: null, userId: process.env.TELEGRAM_OWNER_ID });
+          } catch (error) {
+            logger.error({ traceId: null, reasonCode: "MANAGED_CREW_AUTO_PROMPT_FAILED", conversationId: process.env.TELEGRAM_OWNER_ID, messageId: null, userId: process.env.TELEGRAM_OWNER_ID, extra: { error: error?.message || String(error) } });
+          }
+        }
       } catch (err) {
         logger.error({ traceId: null, reasonCode: "TELEGRAM_WEBHOOK_SETUP_FAILED", conversationId: null, messageId: null, userId: null, extra: { error: err?.message || String(err) } });
       }
