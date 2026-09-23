@@ -136,3 +136,35 @@ test("auto setup prompt is sent only once per day", async () => {
   assert.equal(second, false);
   assert.equal(telegramCalls.length, 2);
 });
+
+
+test("routes direct reply back to the managed agent", async () => {
+  const { manager, store } = await fixture();
+  await store.upsert({
+    agentId: "visual",
+    botUserId: "9006",
+    username: "astel_yuki_bot",
+    displayName: "Yuki Pixel",
+    ownerUserId: "7",
+  });
+  const routed = await manager.routeTextForEvent({
+    text: "сделай еще вариант",
+    parentUserId: "9006",
+  });
+  assert.equal(routed, "Yuki Pixel сделай еще вариант");
+});
+
+test("routes @managed_bot mention to its agent", async () => {
+  const { manager, store } = await fixture();
+  await store.upsert({
+    agentId: "copywriter",
+    botUserId: "9003",
+    username: "astel_sergio_bot",
+    displayName: "Sergio Contentmaker",
+    ownerUserId: "7",
+  });
+  const routed = await manager.routeTextForEvent({
+    text: "@astel_sergio_bot перепиши это",
+  });
+  assert.equal(routed, "Sergio Contentmaker перепиши это");
+});

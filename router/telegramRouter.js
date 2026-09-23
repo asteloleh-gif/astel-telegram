@@ -29,6 +29,8 @@ function buildNormalizedEvent(message, { ownerUserId = null } = {}) {
     conversationId: message.chatId || null,
     messageId: message.messageId || null,
     parentId: message.parentId || null,
+    parentUserId: message.parentUserId || null,
+    parentUsername: message.parentUsername || null,
     threadId: message.threadId || null,
     chatType: message.chatType || null,
     text: message.text || "",

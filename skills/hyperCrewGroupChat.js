@@ -43,8 +43,11 @@ async function handleHyperCrewGroupChat({
   if (!telegramAdapter) throw new Error("Hyper Crew group chat requires telegram adapter");
 
   const history = await conversationStore.read(event);
+  const routedText = managedBotManager?.routeTextForEvent
+    ? await managedBotManager.routeTextForEvent(event)
+    : event.text;
   const result = await client.chat({
-    text: event.text,
+    text: routedText,
     projectId,
     history: history.slice(-12).map(item => ({ role: item.role, text: item.text })),
   });

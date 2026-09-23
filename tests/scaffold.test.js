@@ -6,11 +6,13 @@ const { trimMemory } = require("../memory/reconstructChatMemory");
 
 test("normalizes Telegram message update", () => {
   const adapter = createTelegramAdapter({ token: "test-token" });
-  const msg = adapter.normalizeUpdate({ update_id: 1, message: { message_id: 10, from: { id: 7, username: "leo" }, chat: { id: -100, type: "supergroup" }, text: "Hello" } });
+  const msg = adapter.normalizeUpdate({ update_id: 1, message: { message_id: 10, from: { id: 7, username: "leo" }, reply_to_message: { message_id: 9, from: { id: 9006, username: "astel_yuki_bot" } }, chat: { id: -100, type: "supergroup" }, text: "Hello" } });
   assert.equal(msg.platform, "telegram");
   assert.equal(msg.messageId, "10");
   assert.equal(msg.userId, "7");
   assert.equal(msg.chatId, "-100");
+  assert.equal(msg.parentUserId, "9006");
+  assert.equal(msg.parentUsername, "astel_yuki_bot");
 });
 
 test("conversation key isolates chat, thread, and user", () => {
