@@ -120,7 +120,7 @@ function createTelegramAdapter({
     if (!url) throw new Error("setWebhook requires url");
     const body = {
       url,
-      allowed_updates: ["message", "edited_message", "callback_query"],
+      allowed_updates: ["message", "edited_message", "callback_query", "managed_bot"],
       drop_pending_updates: false,
     };
     if (secretToken) body.secret_token = secretToken;
