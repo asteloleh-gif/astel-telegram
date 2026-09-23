@@ -144,6 +144,21 @@ function createApp({
   });
   app.get("/api/hyper-crew/projects", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listProjects()));
   app.get("/api/hyper-crew/agents", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listAgents()));
+  app.post("/api/hyper-crew/agents/resolve", telegramSetupGuard, async (req, res) => {
+    const text = String(req.body?.text || "").trim();
+    if (!text) return res.status(400).json({ error: "TEXT_REQUIRED" });
+    await runHyperCrewAction(res, () => hyperCrew.resolveAgent(text));
+  });
+  app.patch("/api/hyper-crew/agents/:id", telegramSetupGuard, async (req, res) => {
+    const patch = {
+      ...(req.body?.name !== undefined ? { name: req.body.name } : {}),
+      ...(req.body?.title !== undefined ? { title: req.body.title } : {}),
+      ...(req.body?.description !== undefined ? { description: req.body.description } : {}),
+      ...(req.body?.aliases !== undefined ? { aliases: req.body.aliases } : {}),
+      ...(req.body?.enabled !== undefined ? { enabled: req.body.enabled } : {}),
+    };
+    await runHyperCrewAction(res, () => hyperCrew.updateAgent(req.params.id, patch));
+  });
   app.get("/api/hyper-crew/connectors", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listConnectors()));
   app.get("/api/hyper-crew/runs", telegramSetupGuard, async (_req, res) => runHyperCrewAction(res, () => hyperCrew.listRuns()));
   app.get("/api/hyper-crew/runs/:id", telegramSetupGuard, async (req, res) => runHyperCrewAction(res, () => hyperCrew.getRun(req.params.id)));
