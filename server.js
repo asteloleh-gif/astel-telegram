@@ -28,6 +28,8 @@ const { createApprovalController } = require("./copilot/approvalController");
 const { createHyperCrewClient, HyperCrewError } = require("./connectors/hyperCrewClient");
 const { createHyperCrewSkill } = require("./skills/hyperCrewSkill");
 const { isHyperCrewGroupChat, handleHyperCrewGroupChat } = require("./skills/hyperCrewGroupChat");
+const { createManagedCrewBotStore } = require("./storage/managedCrewBotStore");
+const { createManagedCrewManager } = require("./telegram/managedCrewManager");
 
 function createApp({
   telegramAdapter,
@@ -42,6 +44,8 @@ function createApp({
   skillRegistry,
   assistantPipeline,
   messageStore: providedMessageStore,
+  managedCrewBotStore: providedManagedCrewBotStore,
+  managedCrewManager: providedManagedCrewManager,
   hyperCrewClient,
   logger,
   env = process.env,
@@ -95,6 +99,17 @@ function createApp({
     maxAgeSeconds: Number(env.MINI_APP_AUTH_MAX_AGE_SECONDS || 900),
   });
   const messageStore = providedMessageStore || createMessageStore({ connectionString: env.DATABASE_URL, logger: log });
+  const managedCrewBotStore = providedManagedCrewBotStore || createManagedCrewBotStore({ connectionString: env.DATABASE_URL });
+  const managedCrew = providedManagedCrewManager || createManagedCrewManager({
+    managerToken: env.TELEGRAM_BOT_TOKEN,
+    ownerUserId: policy.ownerUserId,
+    groupChatId: env.HYPER_CREW_TELEGRAM_CHAT_ID,
+    store: managedCrewBotStore,
+    redisClient: redis,
+    telegramAdapter: telegram,
+    logger: log,
+    namespace: policy.redisNamespace,
+  });
 
   const heartbeatKey = `${policy.redisNamespace}:health:heartbeat`;
   const app = express();
@@ -110,7 +125,7 @@ function createApp({
       ok: redisUp,
       service: "astel-telegram",
       product: "Astel Assistant",
-      version: "0.5.1",
+      version: "0.6.0",
       configured,
       botEnabled: policy.botEnabled,
       dryRun: policy.botDryRun,
@@ -291,6 +306,7 @@ function createApp({
     }
     res.sendStatus(200);
     try {
+      if (await managedCrew.handleRawUpdate(req.body)) return;
       if (await copilot.handle(req.body)) return;
       const message = telegram.normalizeUpdate(req.body);
       if (!message) {
@@ -311,12 +327,18 @@ function createApp({
       const safetyResult = await runSafetyPipeline({ dedupeStore: dedupe, reservationStore: reservation, cooldownStore: cooldown, logger: log }, event);
       if (safetyResult.action !== "SAFE_STOP") return;
 
+      if (managedCrew.canHandleSetupCommand(event)) {
+        await managedCrew.handleSetupCommand(event);
+        return;
+      }
+
       if (isHyperCrewGroupChat(event, { chatId: env.HYPER_CREW_TELEGRAM_CHAT_ID })) {
         await handleHyperCrewGroupChat({
           event,
           client: hyperCrew,
           conversationStore: memory,
           telegramAdapter: telegram,
+          managedBotManager: managedCrew,
           projectId: env.HYPER_CREW_TELEGRAM_PROJECT_ID || "astel-business",
           logger: log,
         });
@@ -345,6 +367,8 @@ function createApp({
     assistantPipeline: assistant,
     telegramResearch,
     messageStore,
+    managedCrewBotStore,
+    managedCrew,
     syncMessages,
     copilot,
     hyperCrew,
@@ -352,7 +376,7 @@ function createApp({
 }
 
 async function start() {
-  const { app, logger, redisClient, telegramAdapter, messageStore, syncMessages, copilot } = createApp();
+  const { app, logger, redisClient, telegramAdapter, messageStore, managedCrewBotStore, syncMessages, copilot } = createApp();
 
   try { await redisClient.connect(); }
   catch (err) {
@@ -363,6 +387,12 @@ async function start() {
     messageStore.init()
       .then(() => logger.info({ traceId: null, reasonCode: "MESSAGE_STORE_READY", conversationId: null, messageId: null, userId: null }))
       .catch((error) => logger.error({ traceId: null, reasonCode: "MESSAGE_STORE_INIT_FAILED", conversationId: null, messageId: null, userId: null, extra: { error: error?.message || String(error) } }));
+  }
+
+  if (managedCrewBotStore.isConfigured()) {
+    managedCrewBotStore.init()
+      .then(() => logger.info({ traceId: null, reasonCode: "MANAGED_CREW_STORE_READY", conversationId: null, messageId: null, userId: null }))
+      .catch((error) => logger.error({ traceId: null, reasonCode: "MANAGED_CREW_STORE_INIT_FAILED", conversationId: null, messageId: null, userId: null, extra: { error: error?.message || String(error) } }));
   }
 
   const port = Number(process.env.PORT || 3000);
