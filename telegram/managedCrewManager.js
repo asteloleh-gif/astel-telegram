@@ -289,14 +289,35 @@ function createManagedCrewManager({
     }
 
     let adapter = createTelegramAdapter({ token, fetchImpl });
-    try {
+    const send = async (replyId) => {
       if (dataUrl) {
-        await adapter.sendPhoto({ chatId, dataUrl, caption: text, replyToMessageId, threadId });
-      } else {
-        await adapter.sendMessage({ chatId, text, replyToMessageId, threadId });
+        return adapter.sendPhoto({ chatId, dataUrl, caption: text, replyToMessageId: replyId, threadId });
       }
+      return adapter.sendMessage({ chatId, text, replyToMessageId: replyId, threadId });
+    };
+
+    try {
+      await send(replyToMessageId);
       return true;
     } catch (error) {
+      const replyTargetMissing = Boolean(
+        replyToMessageId
+        && /message to be replied not found/i.test(String(error?.message || ""))
+      );
+
+      if (replyTargetMissing) {
+        try {
+          await send(null);
+          logger?.info?.({
+            reasonCode: "MANAGED_BOT_REPLY_FALLBACK_SENT",
+            extra: { agentId, botUserId: record.botUserId },
+          });
+          return true;
+        } catch (retryError) {
+          error = retryError;
+        }
+      }
+
       tokenCache.delete(String(record.botUserId));
       logger?.warn?.({ reasonCode: "MANAGED_BOT_SEND_FAILED", extra: { agentId, error: error.message } });
       return false;
