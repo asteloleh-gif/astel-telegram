@@ -7,7 +7,7 @@ const CREW_MANAGED_AGENTS = Object.freeze([
   Object.freeze({ id: "reviewer", name: "Hans QA", title: "Reviewer", username: "astel_hans_bot", requestId: 2104, emoji: "👷" }),
   Object.freeze({ id: "distribution-manager", name: "Luca Everywhere", title: "Distribution Manager", username: "astel_luca_bot", requestId: 2105, emoji: "🌍" }),
   Object.freeze({ id: "visual", name: "Yuki Pixel", title: "Visual", username: "astel_yuki_bot", requestId: 2106, emoji: "🎨" }),
-  Object.freeze({ id: "analytics", name: "Eddie Dataman", title: "Analytics", username: "astel_eddie_bot", requestId: 2107, emoji: "📊" }),
+  Object.freeze({ id: "analytics", name: "Edie Dataman", title: "Analytics", username: "astel_edie_bot", requestId: 2107, emoji: "📊" }),
   Object.freeze({ id: "router-parser", name: "Vasya Free Tier Hustler", title: "Router / Parser", username: "astel_vasya_bot", requestId: 2108, emoji: "🧩" }),
 ]);
 
