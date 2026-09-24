@@ -403,7 +403,7 @@ async function start() {
     if (process.env.TELEGRAM_BOT_TOKEN && publicBaseUrl) {
       try {
         const bot = await telegramAdapter.getMe();
-        logger.info({ traceId: null, reasonCode: "TELEGRAM_BOT_READY", conversationId: null, messageId: null, userId: null, extra: { botId: bot?.id || null, username: bot?.username || null } });
+        logger.info({ traceId: null, reasonCode: "TELEGRAM_BOT_READY", conversationId: null, messageId: null, userId: null, extra: { botId: bot?.id || null, username: bot?.username || null, canManageBots: Boolean(bot?.can_manage_bots) } });
         const webhookUrl = `${publicBaseUrl}/telegram/webhook`;
         await telegramAdapter.setWebhook({ url: webhookUrl, secretToken: process.env.TELEGRAM_WEBHOOK_SECRET || null });
         logger.info({ traceId: null, reasonCode: "TELEGRAM_WEBHOOK_SET", conversationId: null, messageId: null, userId: null, extra: { webhookUrl } });
