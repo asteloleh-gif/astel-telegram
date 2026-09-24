@@ -104,20 +104,24 @@ function createManagedCrewManager({
 
   async function promptForAgent(chatId, agent) {
     await redisClient.set(pendingKey, agent.id, { EX: 3600 });
-    const manager = normalizeUsername(managerUsername || "astelcore_bot");
-    const createUrl = `https://t.me/newbot/${manager}/${agent.username}?name=${encodeURIComponent(agent.name)}`;
     return telegramAdapter.sendMessage({
       chatId,
       text: [
         `${agent.emoji} Создаём ${agent.name} — ${agent.title}.`,
         "",
-        "Нажми кнопку ниже. Telegram откроет именно форму создания managed bot с уже заполненными именем и username.",
+        "Нажми большую кнопку Create ниже. Это нативный Telegram managed-bot request — без deep link.",
       ].join("\n"),
       replyMarkup: {
-        inline_keyboard: [[{
+        keyboard: [[{
           text: `Create ${agent.name}`,
-          url: createUrl,
+          request_managed_bot: {
+            request_id: agent.requestId,
+            suggested_name: agent.name,
+            suggested_username: agent.username,
+          },
         }]],
+        resize_keyboard: true,
+        one_time_keyboard: true,
       },
     });
   }
