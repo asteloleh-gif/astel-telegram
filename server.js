@@ -25,6 +25,8 @@ const { createTelegramResearchProxy } = require("./setup/telegramResearchProxy")
 const { planTelegramQueries, runTelegramAiSearch } = require("./research/telegramAiSearch");
 const { createMessageStore } = require("./storage/messageStore");
 const { createApprovalController } = require("./copilot/approvalController");
+const { createDistributionController } = require("./distribution/controller");
+const { createDistributionStateStore } = require("./distribution/stateStore");
 const { createHyperCrewClient, HyperCrewError } = require("./connectors/hyperCrewClient");
 const { createHyperCrewSkill } = require("./skills/hyperCrewSkill");
 const { isHyperCrewGroupChat, handleHyperCrewGroupChat } = require("./skills/hyperCrewGroupChat");
@@ -117,6 +119,8 @@ function createApp({
   app.use(express.json({ limit: "1mb" }));
   const copilot = createApprovalController({ redis, telegram, env });
   copilot.mount(app, { webAppGuard: telegramSetupGuard });
+  const distribution = createDistributionController({ stateStore:createDistributionStateStore({connectionString:env.DATABASE_URL}), telegram, env });
+  distribution.mount(app, { webAppGuard: telegramSetupGuard });
 
   app.get("/health", async (_req, res) => {
     const redisUp = await redis.checkHeartbeat(heartbeatKey, policy.healthHeartbeatTtlSeconds);
@@ -132,6 +136,7 @@ function createApp({
       redisStatus: redisUp ? "up" : "down",
       messageStoreConfigured: messageStore.isConfigured(),
       copilotApprovalEnabled: env.COPILOT_APPROVAL_ENABLED === "true",
+      distributionConnectorEnabled: distribution.active(),
       hyperCrewConfigured: hyperCrew.isConfigured(),
       aiProvider: policy.aiProvider,
       aiModels: { chat: policy.openaiChatModel, power: policy.openaiPowerModel },
@@ -307,6 +312,7 @@ function createApp({
     res.sendStatus(200);
     try {
       if (await managedCrew.handleRawUpdate(req.body)) return;
+      if (await distribution.handle(req.body)) return;
       if (await copilot.handle(req.body)) return;
       const message = telegram.normalizeUpdate(req.body);
       if (!message) {
@@ -371,17 +377,19 @@ function createApp({
     managedCrew,
     syncMessages,
     copilot,
+    distribution,
     hyperCrew,
   };
 }
 
 async function start() {
-  const { app, logger, redisClient, telegramAdapter, messageStore, managedCrewBotStore, managedCrew, syncMessages, copilot } = createApp();
+  const { app, logger, redisClient, telegramAdapter, messageStore, managedCrewBotStore, managedCrew, syncMessages, copilot, distribution } = createApp();
 
   try { await redisClient.connect(); }
   catch (err) {
     logger.critical({ traceId: null, reasonCode: "REDIS_UNAVAILABLE", conversationId: null, messageId: null, userId: null, extra: { stage: "startup", error: err.message } });
   }
+  distribution.start();
 
   if (messageStore.isConfigured()) {
     messageStore.init()

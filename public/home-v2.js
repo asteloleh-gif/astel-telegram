@@ -385,7 +385,7 @@
     byId.settings && grid.appendChild(byId.settings);
 
     grid.querySelector('[data-home-v2="hypercrew"]')?.addEventListener('click', openCrew);
-    grid.querySelector('[data-home-v2="approvals"]')?.addEventListener('click', () => alert('Approvals — existing approval flow will be connected here'));
+    grid.querySelector('[data-home-v2="approvals"]')?.addEventListener('click', () => window.renderDistribution());
 
     const nav = document.querySelector('.bottom-nav');
     if (nav) nav.innerHTML = `
