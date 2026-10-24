@@ -11,9 +11,24 @@
   function safeUrl(raw) { try {const u = new URL(raw); return u.protocol === 'https:' && !u.username && !u.password ? u.href : '';} catch (_) {return '';} }
   function shell() {
     const root = document.querySelector('#app');
-    root.innerHTML = '<div class="topbar"><button class="topbar__back" id="distribution-back">‹ Назад</button></div><section class="setup-hero"><h1>Дистрибуция</h1><p>Запасной канал управления Astel</p></section><p id="distribution-message" role="status"></p><section id="distribution-metrics"></section><section id="distribution-content"></section><button class="sheet__close" id="distribution-more" hidden>Загрузить ещё</button>';
+    root.innerHTML = '<div class="topbar"><button class="topbar__back" id="distribution-back">‹ Назад</button></div><section class="setup-hero"><h1>Дистрибуция</h1><p>Запасной канал управления Astel</p></section><p id="distribution-message" role="status"></p><section id="distribution-metrics"></section><button class="sheet__close" id="distribution-youtube" hidden>YouTube · Astel Family</button><section id="distribution-content"></section><button class="sheet__close" id="distribution-more" hidden>Загрузить ещё</button>';
     root.querySelector('#distribution-back').onclick = () => window.render();
     return root;
+  }
+  async function youtube() {
+    const root=shell(),message=root.querySelector('#distribution-message'),content=root.querySelector('#distribution-content');
+    message.textContent='Загрузка Astel Family…';
+    try{
+      const account=await api('youtube/account');
+      content.innerHTML=`<h2>${esc(account.title)}</h2><p>${esc(account.customUrl)} · Подписчики: ${esc(account.statistics?.subscriberCount)} · Просмотры: ${esc(account.statistics?.viewCount)}</p><p>Подключено чтение канала и аналитики. Публикация через это подключение пока недоступна.</p><label>С даты <input type="date" id="youtube-start"></label><label>По дату <input type="date" id="youtube-end"></label><button class="sheet__close" id="youtube-report">Показать аналитику</button><section id="youtube-report-content"></section><section id="youtube-video-list"></section>`;
+      const end=new Date();end.setUTCDate(end.getUTCDate()-1);const start=new Date(end);start.setUTCDate(start.getUTCDate()-27);
+      content.querySelector('#youtube-start').value=start.toISOString().slice(0,10);content.querySelector('#youtube-end').value=end.toISOString().slice(0,10);
+      const reportButton=content.querySelector('#youtube-report');reportButton.onclick=async()=>{
+        reportButton.disabled=true;const target=content.querySelector('#youtube-report-content');target.textContent='Загрузка отчёта…';
+        try{const dates=new URLSearchParams({startDate:content.querySelector('#youtube-start').value,endDate:content.querySelector('#youtube-end').value});const report=await api('youtube/analytics?'+dates);target.innerHTML=report.rows.length?'<div style="overflow:auto"><table><thead><tr>'+report.columnHeaders.map(h=>'<th>'+esc(h.name)+'</th>').join('')+'</tr></thead><tbody>'+report.rows.map(row=>'<tr>'+row.map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>':'За выбранный период данных пока нет.';}catch(error){target.textContent=error.message;}finally{reportButton.disabled=false;}
+      };
+      const videos=await api('youtube/videos');content.querySelector('#youtube-video-list').innerHTML=`<h3>Видео: ${esc(videos.count)}</h3>`+videos.items.map(v=>`<p>${/^[A-Za-z0-9_-]{11}$/.test(v.videoId||'')?'<a target="_blank" rel="noopener noreferrer" href="https://www.youtube.com/watch?v='+encodeURIComponent(v.videoId)+'">'+esc(v.title)+'</a>':esc(v.title)} · ${esc(v.privacyStatus)}</p>`).join('');message.textContent='';
+    }catch(error){message.textContent=error.message;}
   }
   async function details(id) {
     const root = shell(),message=root.querySelector('#distribution-message');
@@ -53,6 +68,7 @@
         cursor=data.nextCursor;more.hidden=!cursor;message.textContent=content.childElementCount?'':'Очередь пуста.';
       }catch(error){message.textContent=error.message;}finally{more.disabled=false;}
     }
+    try{const features=await api('features');if(features.youtubeRead){const button=root.querySelector('#distribution-youtube');button.hidden=false;button.onclick=youtube;}}catch(_){}
     more.onclick=page;
     await page();
     try{const metrics=await api('metrics');root.querySelector('#distribution-metrics').textContent=`В очереди: ${metrics.pending} · Ошибки: ${metrics.failed} · Требуют проверки: ${metrics.ambiguous} · Подтверждено: ${metrics.confirmedSuccess}`;}catch(_){}

@@ -10,7 +10,7 @@ function createDistributionHubClient({ env = process.env, fetchImpl = globalThis
   const enabled = () => env.DISTRIBUTION_HUB_ENABLED === "true" && Boolean(origin && reader.length >= 32);
   async function call(action, args = {}) {
     if (!enabled()) throw new Error("DISTRIBUTION_NOT_CONFIGURED");
-    const read = ["inbox", "status", "metrics", "events"].includes(action);
+    const read = ["inbox", "status", "metrics", "events", "youtubeaccount", "youtubevideos", "youtubeanalytics"].includes(action);
     if (!read && action !== "approve") throw new Error("DISTRIBUTION_ACTION_DENIED");
     const token = read ? reader : owner;
     if (token.length < 32) throw new Error("DISTRIBUTION_APPROVAL_NOT_CONFIGURED");

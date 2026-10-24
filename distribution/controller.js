@@ -27,6 +27,18 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
       if (!active()) return res.status(503).json({ error: "DISTRIBUTION_DISABLED" });
       return webAppGuard(req, res, () => String(req.telegramMiniAppUser?.id) === ownerId ? next() : res.sendStatus(403));
     };
+    app.get("/api/distribution/features", guard, (_req, res) => res.json({youtubeRead:env.DISTRIBUTION_YOUTUBE_ENABLED === "true"}));
+    app.get("/api/distribution/youtube/:action", guard, async (req, res) => {
+      if(env.DISTRIBUTION_YOUTUBE_ENABLED !== "true")return res.sendStatus(404);
+      const actions={account:"youtubeaccount",videos:"youtubevideos",analytics:"youtubeanalytics"};
+      if(!Object.hasOwn(actions,req.params.action))return res.sendStatus(404);
+      const args={};
+      if(req.params.action === "analytics"){
+        for(const key of ["startDate","endDate"]){const value=req.query[key];if(typeof value!=="string"||!/^\d{4}-\d\d-\d\d$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value).toISOString().slice(0,10)!==value)return res.sendStatus(400);args[key]=value;}
+        if(args.startDate>args.endDate)return res.sendStatus(400);
+      }
+      try{res.json(await hub.call(actions[req.params.action],args));}catch(_){safeError(res);}
+    });
     app.get("/api/distribution/inbox", guard, async (req, res) => {
       try { res.json(await hub.call("inbox", { ...(req.query.cursor ? { cursor: String(req.query.cursor) } : {}) })); } catch (_) { safeError(res); }
     });
