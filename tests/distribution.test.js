@@ -80,5 +80,17 @@ test('YouTube panel is flag-gated and signed-owner-only; forwards only scoped re
  for(const query of ['startDate=bad&endDate=2026-10-23','startDate=2026-10-24&endDate=2026-10-23','startDate=2026-13-99&endDate=2026-10-23'])assert.equal((await fetch(origin+'/api/distribution/youtube/analytics?'+query,{headers})).status,400);
  assert.equal(f.calls.length,1);assert.equal((await fetch(origin+'/api/distribution/youtube/analytics?startDate=2026-10-01&endDate=2026-10-23&projectId=foreign',{headers})).status,200);assert.deepEqual(f.calls.at(-1),['youtubeanalytics',{startDate:'2026-10-01',endDate:'2026-10-23'}]);assert.equal((await fetch(origin+'/api/distribution/youtube/upload',{headers})).status,404);
 });
-test('YouTube disabled flag leaves existing panel operation unchanged and makes no Google/Hub reads',async t=>{const f=fixture(),origin=await server(t,f);const headers={'x-telegram-init-data':signed()};assert.equal((await fetch(origin+'/api/distribution/youtube/account',{headers})).status,404);assert.deepEqual(await (await fetch(origin+'/api/distribution/features',{headers})).json(),{youtubeRead:false});assert.equal(f.calls.length,0);});
+test('YouTube disabled flag leaves existing panel operation unchanged and makes no Google/Hub reads',async t=>{const f=fixture(),origin=await server(t,f);const headers={'x-telegram-init-data':signed()};assert.equal((await fetch(origin+'/api/distribution/youtube/account',{headers})).status,404);assert.deepEqual(await (await fetch(origin+'/api/distribution/features',{headers})).json(),{youtubeRead:false,youtubeAsapTeam:false});assert.equal(f.calls.length,0);});
 test('YouTube connector read uses reader credential rather than owner approval credential',async()=>{const requests=[];const c=createDistributionHubClient({env:{DISTRIBUTION_HUB_ENABLED:'true',DISTRIBUTION_HUB_URL:'https://hub.test',DISTRIBUTION_HUB_READER_TOKEN:'r'.repeat(32),DISTRIBUTION_HUB_OWNER_TOKEN:'o'.repeat(32)},fetchImpl:async(url,o)=>{requests.push({url,...o});return new Response('{}');}});await c.call('youtubeaccount');assert.equal(requests[0].headers.authorization,'Bearer '+'r'.repeat(32));await assert.rejects(()=>c.call('youtubeupload'),/ACTION_DENIED/);assert.equal(requests.length,1);});
+
+test('ASAP reads are separately gated, whitelist account keys and preserve Family default',async t=>{
+ const f=fixture({client:{async call(action,args){f.calls.push([action,args]);return {channelId:args.accountKey||'family'};}}});
+ f.controller=createDistributionController({redis:f.redis,telegram:f.telegram,env:{...env,DISTRIBUTION_YOUTUBE_ENABLED:'true',DISTRIBUTION_YOUTUBE_ASAP_TEAM_ENABLED:'true'},client:f.client});
+ const origin=await server(t,f),headers={'x-telegram-init-data':signed()};
+ assert.equal((await fetch(origin+'/api/distribution/youtube/account?accountKey=asap-team',{headers})).status,200);
+ assert.deepEqual(f.calls.at(-1),['youtubeaccount',{accountKey:'asap-team'}]);
+ assert.equal((await fetch(origin+'/api/distribution/youtube/account?accountKey=foreign',{headers})).status,400);
+ assert.equal(f.calls.length,1);
+ assert.equal((await fetch(origin+'/api/distribution/youtube/account',{headers})).status,200);
+ assert.deepEqual(f.calls.at(-1),['youtubeaccount',{}]);
+});
