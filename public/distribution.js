@@ -3,7 +3,7 @@
   async function api(path, body) {
     const init = window.Telegram?.WebApp?.initData;
     if (!init) throw Error('Открой Astel из Telegram, чтобы увидеть очередь.');
-    const response = await fetch('/api/distribution/' + path, { method: body ? 'POST' : 'GET', headers: {'content-type':'application/json','x-telegram-init-data':init}, ...(body ? {body:JSON.stringify(body)} : {}) });
+    const response = await fetch((new URLSearchParams(location.search).get('distributionProject')==='subteam'?'/api/distribution/subteam/':'/api/distribution/') + path, { method: body ? 'POST' : 'GET', headers: {'content-type':'application/json','x-telegram-init-data':init}, ...(body ? {body:JSON.stringify(body)} : {}) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw Error(response.status === 503 ? 'Связь с Hub пока недоступна. Решение не отправлено.' : 'Не удалось выполнить действие. Обнови статус перед повтором.');
     return data;
@@ -11,8 +11,8 @@
   function safeUrl(raw) { try {const u = new URL(raw); return u.protocol === 'https:' && !u.username && !u.password ? u.href : '';} catch (_) {return '';} }
   function shell() {
     const root = document.querySelector('#app');
-    root.innerHTML = '<div class="topbar"><button class="topbar__back" id="distribution-back">‹ Назад</button></div><section class="setup-hero"><h1>Дистрибуция</h1><p>Запасной канал управления Astel</p></section><p id="distribution-message" role="status"></p><section id="distribution-metrics"></section><button class="sheet__close" id="distribution-youtube" hidden>YouTube · Astel Family</button><button class="sheet__close" id="distribution-youtube-asap" hidden>YouTube · ASAP Team</button><section id="distribution-content"></section><button class="sheet__close" id="distribution-more" hidden>Загрузить ещё</button>';
-    root.querySelector('#distribution-back').onclick = () => window.render();
+    root.innerHTML = '<div class="topbar"><button class="topbar__back" id="distribution-back">‹ Назад</button></div><section class="setup-hero"><h1>Дистрибуция</h1><p>Согласования и результаты Astel</p></section><p id="distribution-message" role="status"></p><section id="distribution-metrics"></section><button class="sheet__close" id="distribution-youtube" hidden>YouTube · Astel Family</button><button class="sheet__close" id="distribution-youtube-asap" hidden>YouTube · ASAP Team</button><section id="distribution-content"></section><button class="sheet__close" id="distribution-more" hidden>Загрузить ещё</button>';
+    root.querySelector('#distribution-back').onclick = () => {if(new URLSearchParams(location.search).get('distributionProject')==='subteam')location.href='/?distribution=1';else window.render();};
     return root;
   }
   async function youtube(accountKey='family') {

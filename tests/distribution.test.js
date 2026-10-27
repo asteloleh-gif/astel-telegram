@@ -94,3 +94,13 @@ test('ASAP reads are separately gated, whitelist account keys and preserve Famil
  assert.equal((await fetch(origin+'/api/distribution/youtube/account',{headers})).status,200);
  assert.deepEqual(f.calls.at(-1),['youtubeaccount',{}]);
 });
+test('subteam panel is signed-owner-only and uses its fixed project; approvals never schedule or cross to Copilot',async t=>{
+ const calls=[];const plan={id:planId,digest,state:'NEEDS_APPROVAL',input:{projectId:'subteam',destinations:[{scheduledAt:'2035-01-01T00:00:00Z'}]}};
+ const config={...env,DISTRIBUTION_HUB_ENABLED:'true',DISTRIBUTION_HUB_URL:'https://hub.test',DISTRIBUTION_HUB_READER_TOKEN:'r'.repeat(40),DISTRIBUTION_HUB_OWNER_TOKEN:'o'.repeat(40),DISTRIBUTION_SUBTEAM_ENABLED:'true'};
+ const original=globalThis.fetch;globalThis.fetch=async(url,o)=>{if(!String(url).startsWith('https://hub.test'))return original(url,o);const body=JSON.parse(o.body);calls.push({action:String(url).split('/').at(-1),body,authorization:o.headers.authorization});return new Response(JSON.stringify(String(url).endsWith('/status')?plan:String(url).endsWith('/approve')?{...plan,state:'APPROVED'}:{items:[]}));};t.after(()=>{globalThis.fetch=original;});
+ const f=fixture();f.controller=createDistributionController({redis:f.redis,telegram:f.telegram,env:config});const origin=await server(t,f),headers={'x-telegram-init-data':signed()};
+ assert.equal((await fetch(origin+'/api/distribution/subteam/inbox')).status,401);assert.equal(calls.length,0);
+ assert.equal((await fetch(origin+'/api/distribution/subteam/inbox?projectId=foreign',{headers})).status,200);assert.equal(calls[0].body.projectId,'subteam');
+ assert.equal((await fetch(origin+'/api/distribution/subteam/approve',{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({planId,digest})})).status,200);
+ assert.deepEqual(calls.map(c=>c.action),['inbox','status','approve']);assert.ok(calls.every(c=>c.body.projectId==='subteam'));assert.equal(calls.at(-1).authorization,'Bearer '+'o'.repeat(40));
+});

@@ -4,6 +4,8 @@ const { createDistributionHubClient } = require("../connectors/distributionHubCl
 function createDistributionController({ redis, stateStore, telegram, env = process.env, client, clock = () => Date.now() }) {
   const state=stateStore||redis;
   const hub = client || createDistributionHubClient({ env });
+  const subteam = env.DISTRIBUTION_SUBTEAM_ENABLED === "true" && !env.DISTRIBUTION_API_PREFIX ? createDistributionController({redis,stateStore,telegram,env:{...env,DISTRIBUTION_SUBTEAM_ENABLED:"false",DISTRIBUTION_HUB_PROJECT_ID:"subteam",DISTRIBUTION_API_PREFIX:"/api/distribution/subteam",DISTRIBUTION_YOUTUBE_ENABLED:"false"},clock}) : null;
+  const apiPrefix=env.DISTRIBUTION_API_PREFIX || "/api/distribution";
   const ownerId = String(env.TELEGRAM_OWNER_ID || "");
   const namespace = `astel:distribution:v1:${hub.projectId}`;
   let initialization;
@@ -11,9 +13,9 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
   const active = () => hub.enabled() && Boolean(ownerId && env.TELEGRAM_WEBHOOK_SECRET && state && (!state.isConfigured || state.isConfigured()));
   const safeError = res => res.status(503).json({ error: "DISTRIBUTION_UNAVAILABLE" });
   function panelUrl() {
-    try { const u = new URL(env.PUBLIC_BASE_URL); if (u.protocol !== "https:") return ""; u.pathname = "/"; u.search = "?distribution=1"; u.hash = ""; return u.toString(); } catch (_) { return ""; }
+    try { const u = new URL(env.PUBLIC_BASE_URL); if (u.protocol !== "https:") return ""; u.pathname = "/"; u.search = "?distribution=1"+(hub.projectId === "subteam" ? "&distributionProject=subteam" : ""); u.hash = ""; return u.toString(); } catch (_) { return ""; }
   }
-  const openButton = () => panelUrl() ? { inline_keyboard: [[{ text: "Открыть очередь и согласования", web_app: { url: panelUrl() } }]] } : null;
+  const openButton = () => panelUrl() ? { inline_keyboard: [[{ text: "Открыть очередь и согласования", web_app: { url: panelUrl() } }],...(subteam?[[{text:"ASAP Team · согласования",web_app:{url:panelUrl()+"&distributionProject=subteam"}}]]:[])] } : null;
   async function approve(planId, digest) {
     if (!/^[a-f0-9]{64}$/.test(planId || "") || !/^[a-f0-9]{64}$/.test(digest || "")) throw new Error("INVALID_APPROVAL");
     const plan = await hub.call("status", { planId });
@@ -23,12 +25,13 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
     return hub.call("approve", { planId, digest });
   }
   function mount(app, { webAppGuard }) {
+    if(subteam)subteam.mount(app,{webAppGuard});
     const guard = (req, res, next) => {
       if (!active()) return res.status(503).json({ error: "DISTRIBUTION_DISABLED" });
       return webAppGuard(req, res, () => String(req.telegramMiniAppUser?.id) === ownerId ? next() : res.sendStatus(403));
     };
-    app.get("/api/distribution/features", guard, (_req, res) => res.json({youtubeRead:env.DISTRIBUTION_YOUTUBE_ENABLED === "true",youtubeAsapTeam:env.DISTRIBUTION_YOUTUBE_ASAP_TEAM_ENABLED === "true"}));
-    app.get("/api/distribution/youtube/:action", guard, async (req, res) => {
+    app.get(`${apiPrefix}/features`, guard, (_req, res) => res.json({youtubeRead:env.DISTRIBUTION_YOUTUBE_ENABLED === "true",youtubeAsapTeam:env.DISTRIBUTION_YOUTUBE_ASAP_TEAM_ENABLED === "true"}));
+    app.get(`${apiPrefix}/youtube/:action`, guard, async (req, res) => {
       if(env.DISTRIBUTION_YOUTUBE_ENABLED !== "true")return res.sendStatus(404);
       const actions={account:"youtubeaccount",videos:"youtubevideos",analytics:"youtubeanalytics"};
       if(!Object.hasOwn(actions,req.params.action))return res.sendStatus(404);
@@ -44,17 +47,17 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
       }
       try{res.json(await hub.call(actions[req.params.action],args));}catch(_){safeError(res);}
     });
-    app.get("/api/distribution/inbox", guard, async (req, res) => {
+    app.get(`${apiPrefix}/inbox`, guard, async (req, res) => {
       try { res.json(await hub.call("inbox", { ...(req.query.cursor ? { cursor: String(req.query.cursor) } : {}) })); } catch (_) { safeError(res); }
     });
-    app.get("/api/distribution/metrics", guard, async (_req, res) => {
+    app.get(`${apiPrefix}/metrics`, guard, async (_req, res) => {
       try { res.json(await hub.call("metrics")); } catch (_) { safeError(res); }
     });
-    app.get("/api/distribution/plans/:id", guard, async (req, res) => {
+    app.get(`${apiPrefix}/plans/:id`, guard, async (req, res) => {
       if (!/^[a-f0-9]{64}$/.test(req.params.id)) return res.sendStatus(400);
       try { res.json(await hub.call("status", { planId: req.params.id })); } catch (_) { safeError(res); }
     });
-    app.post("/api/distribution/approve", guard, async (req, res) => {
+    app.post(`${apiPrefix}/approve`, guard, async (req, res) => {
       if (!hub.approvalsEnabled()) return res.status(503).json({ error: "DISTRIBUTION_APPROVAL_DISABLED" });
       try { res.json(await approve(req.body?.planId, req.body?.digest)); }
       catch (error) { if (["INVALID_APPROVAL", "APPROVAL_STALE"].includes(error.message)) return res.status(409).json({ error: error.message }); safeError(res); }
@@ -79,7 +82,7 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
     return true;
   }
   let busy = false;
-  async function poll() {
+  async function pollOne() {
     if (!active() || busy) return { checked: 0 };
     busy = true;
     try {
@@ -118,6 +121,12 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
       }
       throw error;
     } finally { busy = false; }
+  }
+  async function poll(){
+    if(!subteam)return pollOne();
+    const results=await Promise.allSettled([pollOne(),subteam.poll()]);
+    if(results.some(r=>r.status==='rejected'))throw Error('DISTRIBUTION_UNAVAILABLE');
+    return {checked:results.reduce((n,r)=>n+r.value.checked,0)};
   }
   function start() {
     if (!active() || env.DISTRIBUTION_NOTIFICATIONS_ENABLED !== "true") return null;
