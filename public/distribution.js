@@ -69,7 +69,7 @@
         cursor=data.nextCursor;more.hidden=!cursor;message.textContent=content.childElementCount?'':'Очередь пуста.';
       }catch(error){message.textContent=error.message;}finally{more.disabled=false;}
     }
-    try{const features=await api('features');if(features.youtubeRead){const button=root.querySelector('#distribution-youtube');button.hidden=false;button.onclick=()=>youtube('family');if(features.youtubeAsapTeam){const asap=root.querySelector('#distribution-youtube-asap');asap.hidden=false;asap.onclick=()=>youtube('asap-team');}}}catch(_){}
+    try{const features=await api('features');if(features.videoWorkspace&&window.renderVideoWorkspace){const button=document.createElement('button');button.className='sheet__close';button.textContent='Видеочерновики Astel';button.onclick=()=>window.renderVideoWorkspace();content.before(button);}if(features.youtubeRead){const button=root.querySelector('#distribution-youtube');button.hidden=false;button.onclick=()=>youtube('family');if(features.youtubeAsapTeam){const asap=root.querySelector('#distribution-youtube-asap');asap.hidden=false;asap.onclick=()=>youtube('asap-team');}}}catch(_){}
     more.onclick=page;
     await page();
     try{const metrics=await api('metrics');root.querySelector('#distribution-metrics').textContent=`В очереди: ${metrics.pending} · Ошибки: ${metrics.failed} · Требуют проверки: ${metrics.ambiguous} · Подтверждено: ${metrics.confirmedSuccess}`;}catch(_){}

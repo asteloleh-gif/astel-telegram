@@ -24,7 +24,7 @@ function fixture(options={}){
   if(action==='inbox')return {items:[]};if(action==='metrics')return {pending:1,failed:0,ambiguous:0,confirmedSuccess:0};
  },...options.client};
  const telegram={async sendMessage(value){sent.push(value);if(options.lostAck)throw Error('lost acknowledgement');return {message_id:sent.length};}};
- return {redis,calls,sent,plan,client,telegram,controller:createDistributionController({redis,telegram,env,client})};
+ return {redis,calls,sent,plan,client,telegram,controller:createDistributionController({redis,telegram,env:{...env,...options.env},client})};
 }
 async function server(t,f){const app=express();app.use(express.json());f.controller.mount(app,{webAppGuard:createTelegramWebAppGuard({botToken:env.TELEGRAM_BOT_TOKEN,ownerUserId:'7'})});
  const s=await new Promise(resolve=>{const server=app.listen(0,'127.0.0.1',()=>resolve(server));});t.after(()=>new Promise(resolve=>s.close(resolve)));return `http://127.0.0.1:${s.address().port}`;
@@ -103,4 +103,21 @@ test('subteam panel is signed-owner-only and uses its fixed project; approvals n
  assert.equal((await fetch(origin+'/api/distribution/subteam/inbox?projectId=foreign',{headers})).status,200);assert.equal(calls[0].body.projectId,'subteam');
  assert.equal((await fetch(origin+'/api/distribution/subteam/approve',{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({planId,digest})})).status,200);
  assert.deepEqual(calls.map(c=>c.action),['inbox','status','approve']);assert.ok(calls.every(c=>c.body.projectId==='subteam'));assert.equal(calls.at(-1).authorization,'Bearer '+'o'.repeat(40));
+});
+
+test('video Canvas is separately enabled, signed-owner-only and cannot submit or schedule',async t=>{
+ const videoCalls=[];const f=fixture({env:{VIDEO_WORKSPACE_ENABLED:'true'},client:{async video(action,args){videoCalls.push([action,args]);return {items:[]};}}});const origin=await server(t,f);
+ const post=(action,body,auth=signed())=>fetch(origin+'/api/distribution/video-workspace/'+action,{method:'POST',headers:{'content-type':'application/json','x-telegram-init-data':auth},body:JSON.stringify(body)});
+ assert.equal((await post('inbox',{},signed(99))).status,401);assert.equal(videoCalls.length,0);
+ assert.equal((await post('inbox',{})).status,200);
+ for(const action of ['schedule','submit','approve','preflight'])assert.equal((await post(action,{})).status,400);
+ assert.equal((await post('feedback',{planId,digest,requestId:crypto.randomUUID(),decision:'changes_requested',note:'Tighten ending'})).status,200);
+ assert.equal((await post('feedback',{planId,digest,requestId:crypto.randomUUID(),decision:'draft_accepted',note:'',projectId:'other'})).status,400);
+ assert.deepEqual(videoCalls.map(x=>x[0]),['inbox','feedback']);assert.ok(!f.calls.length);
+});
+
+test('video connector fixes project and endpoint and selects only reader or owner credential',async()=>{
+ const calls=[];const reader='r'.repeat(40),owner='o'.repeat(40);const client=createDistributionHubClient({env:{DISTRIBUTION_HUB_ENABLED:'true',DISTRIBUTION_HUB_URL:'https://hub.test',DISTRIBUTION_HUB_READER_TOKEN:reader,DISTRIBUTION_HUB_OWNER_TOKEN:owner},fetchImpl:async(url,options)=>{calls.push([url,options]);return new Response('{}');}});
+ await client.video('inbox',{});await client.video('feedback',{planId,digest});await assert.rejects(()=>client.video('schedule',{}));
+ assert.equal(calls[0][0],'https://hub.test/api/video-workspace/inbox');assert.equal(calls[0][1].headers.authorization,'Bearer '+reader);assert.equal(calls[1][1].headers.authorization,'Bearer '+owner);assert.equal(JSON.parse(calls[1][1].body).projectId,'copilot');
 });
