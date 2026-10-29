@@ -1,5 +1,7 @@
 const { createHash } = require("node:crypto");
 const { createDistributionHubClient } = require("../connectors/distributionHubClient");
+const { miniAppUrl } = require("../telegram/ownerNavigation");
+const { createLinkHealth } = require("./linkHealth");
 
 function createDistributionController({ redis, stateStore, telegram, env = process.env, client, clock = () => Date.now() }) {
   const state=stateStore||redis;
@@ -12,10 +14,22 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
   async function ensureState(){if(state?.init){if(!initialization)initialization=state.init().catch(()=>{initialization=undefined;throw Error('DISTRIBUTION_STATE_UNAVAILABLE');});await initialization;}}
   const active = () => hub.enabled() && Boolean(ownerId && env.TELEGRAM_WEBHOOK_SECRET && state && (!state.isConfigured || state.isConfigured()));
   const safeError = res => res.status(503).json({ error: "DISTRIBUTION_UNAVAILABLE" });
-  function panelUrl() {
-    try { const u = new URL(env.PUBLIC_BASE_URL); if (u.protocol !== "https:") return ""; u.pathname = "/"; u.search = "?distribution=1"+(hub.projectId === "subteam" ? "&distributionProject=subteam" : ""); u.hash = ""; return u.toString(); } catch (_) { return ""; }
+  const videoEnabled = () => hub.projectId === 'copilot' && env.VIDEO_WORKSPACE_ENABLED === 'true';
+  function panelUrl(options = {}) { return miniAppUrl(env.PUBLIC_BASE_URL, { distribution: true, project: hub.projectId, ...options }); }
+  function openButton({ video = false, planId } = {}) {
+    const url = panelUrl(); if (!url) return null;
+    const queue = [{ text: 'Открыть очередь и согласования', web_app: { url } }];
+    const videos = videoEnabled() ? [{ text: 'Видеочерновики и правки', web_app: { url: panelUrl({ video: true, planId }) } }] : null;
+    const rows = video && videos ? [videos, queue] : [queue, ...(videos ? [videos] : [])];
+    if (subteam) rows.push([{ text: 'ASAP Team · согласования', web_app: { url: miniAppUrl(env.PUBLIC_BASE_URL, { distribution: true, project: 'subteam' }) } }]);
+    return { inline_keyboard: rows };
   }
-  const openButton = () => panelUrl() ? { inline_keyboard: [[{ text: "Открыть очередь и согласования", web_app: { url: panelUrl() } }],...(subteam?[[{text:"ASAP Team · согласования",web_app:{url:panelUrl()+"&distributionProject=subteam"}}]]:[])] } : null;
+  const health = createLinkHealth({ state, namespace, clock, notify: async recovered => {
+    const project = hub.projectId === 'subteam' ? 'ASAP Team' : 'Astel';
+    await telegram.sendMessage({ chatId: ownerId,
+      text: recovered ? `${project}: очередь Hub снова доступна (две проверки подряд).` : `${project}: очередь Hub не прочитана после трёх проверок подряд. Повторим автоматически. Уже переданные в Buffer задания не отменяются.`,
+      replyMarkup: openButton() });
+  } });
   async function approve(planId, digest) {
     if (!/^[a-f0-9]{64}$/.test(planId || "") || !/^[a-f0-9]{64}$/.test(digest || "")) throw new Error("INVALID_APPROVAL");
     const plan = await hub.call("status", { planId });
@@ -30,15 +44,18 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
       if (!active()) return res.status(503).json({ error: "DISTRIBUTION_DISABLED" });
       return webAppGuard(req, res, () => String(req.telegramMiniAppUser?.id) === ownerId ? next() : res.sendStatus(403));
     };
-    app.get(`${apiPrefix}/features`, guard, (_req, res) => res.json({...(hub.projectId==='copilot'&&env.VIDEO_WORKSPACE_ENABLED==='true'?{videoWorkspace:true}:{}),youtubeRead:env.DISTRIBUTION_YOUTUBE_ENABLED === "true",youtubeAsapTeam:env.DISTRIBUTION_YOUTUBE_ASAP_TEAM_ENABLED === "true"}));
+    app.get(`${apiPrefix}/features`, guard, (_req, res) => res.json({...(hub.projectId==='copilot'&&env.VIDEO_WORKSPACE_ENABLED==='true'?{videoWorkspace:true,videoApprovals:hub.approvalsEnabled()}:{}),youtubeRead:env.DISTRIBUTION_YOUTUBE_ENABLED === "true",youtubeAsapTeam:env.DISTRIBUTION_YOUTUBE_ASAP_TEAM_ENABLED === "true"}));
     app.post(`${apiPrefix}/video-workspace/:action`, guard, async(req,res)=>{
       if(hub.projectId!=='copilot'||env.VIDEO_WORKSPACE_ENABLED!=='true'||!hub.video)return res.sendStatus(404);
       const action=req.params.action,body=req.body;
       if(!['inbox','status','feedback'].includes(action)||!body||typeof body!=='object'||Array.isArray(body))return res.sendStatus(400);
       const allowed=action==='inbox'?[]:action==='status'?['planId']:['planId','digest','requestId','decision','note'];
       if(Object.keys(body).some(k=>!allowed.includes(k))||(action!=='inbox'&&!/^[a-f0-9]{64}$/.test(body.planId||'')))return res.sendStatus(400);
-      if(action==='feedback'&&(!/^[a-f0-9]{64}$/.test(body.digest||'')||!['changes_requested','draft_accepted'].includes(body.decision)||typeof body.note!=='string'||body.note.length>2000))return res.sendStatus(400);
-      try{res.json(await hub.video(action,body));}catch(_){safeError(res);}
+      if(action==='feedback'&&(!/^[a-f0-9]{64}$/.test(body.digest||'')||!['changes_requested','draft_accepted'].includes(body.decision)||typeof body.note!=='string'||body.note.length>2000||(body.decision==='changes_requested'&&!body.note.trim())||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(body.requestId||'')))return res.sendStatus(400);
+      try{res.json(await hub.video(action,body));}catch(error){
+        if([400,403,404,409,429].includes(error?.status))return res.status(error.status).json({error:'VIDEO_REQUEST_REJECTED'});
+        safeError(res);
+      }
     });
     app.get(`${apiPrefix}/youtube/:action`, guard, async (req, res) => {
       if(env.DISTRIBUTION_YOUTUBE_ENABLED !== "true")return res.sendStatus(404);
@@ -74,20 +91,35 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
   }
   async function handle(update) {
     const m = update?.message;
-    if (!/^\/distribution(?:@\w+)?(?:\s|$)/.test(String(m?.text || ""))) return false;
-    if (!active() || String(m.from?.id) !== ownerId || m.chat?.type !== "private" || String(m.chat.id) !== ownerId) return true;
+    const match = /^\/(distribution|canvas|video)(?:@\w+)?(?:\s|$)/i.exec(String(m?.text || ''));
+    if (!match) return false;
+    if (String(m.from?.id) !== ownerId || m.chat?.type !== 'private' || String(m.chat.id) !== ownerId) return true;
+    // These navigation commands must never fall through to the paid chat skill.
+    if (!state || !env.TELEGRAM_WEBHOOK_SECRET || (state.isConfigured && !state.isConfigured())) return true;
     await ensureState();
-    const id = createHash("sha256").update(String(update.update_id ?? m.message_id)).digest("hex");
-    if (!(await state.set(`${namespace}:command:${id}`, "reserved", { NX: true }))) return true;
-    let text;
-    try {const metrics = await hub.call("metrics");text = `Дистрибуция Astel\nВ очереди: ${metrics.pending}\nОшибки: ${metrics.failed}\nТребуют проверки: ${metrics.ambiguous}\nПодтверждено: ${metrics.confirmedSuccess}\n\nСогласование доступно в приложении.`;}
-    catch (_) {text = "Связь с Hub недоступна. Новые решения не отправлены. Уже переданные в Buffer задания могут продолжать выполняться.";}
-    try {
-      await telegram.sendMessage({ chatId: ownerId, text, replyMarkup: openButton() });
-    } catch (_) {
-      // A lost send acknowledgement is not a reason to send the same command response again.
-      await state.set(`${namespace}:command:${id}`, "unconfirmed");
+    const id = createHash('sha256').update(String(update.update_id ?? m.message_id)).digest('hex');
+    if (!(await state.set(`${namespace}:command:${id}`, 'reserved', { NX: true }))) return true;
+    const video = match[1].toLowerCase() === 'video';
+    let text, focus;
+    if (!active() || (video && !videoEnabled())) {
+      text = 'Связка с видеочерновиками пока недоступна. Генерация и публикация не запускались.';
+    } else {
+      try {
+        if (video) {
+          const data = await hub.video('inbox', {});
+          const items = Array.isArray(data.items) ? data.items.filter(item => item.latest) : [];
+          focus = items[0]?.planId;
+          text = ['Видеочерновики Astel', items.length ? `Текущих версий: ${items.length}` : 'Черновиков пока нет. Собери ролик в OpenReel и передай его на согласование.',
+            ...items.slice(0, 5).map(item => `${String(item.card?.title || 'Видео').slice(0, 160)} · версия ${item.card?.revision} · ${item.state}`),
+            '', 'Просмотр, замечания и точное согласование — в Canvas. Эта команда не публикует.'].join('\n');
+        } else {
+          const metrics = await hub.call('metrics');
+          text = `Дистрибуция Astel\nВ очереди: ${metrics.pending}\nОшибки: ${metrics.failed}\nТребуют проверки: ${metrics.ambiguous}\nПодтверждено: ${metrics.confirmedSuccess}\n\nВидео и согласования доступны в Canvas.`;
+        }
+      } catch (_) { text = 'Не удалось прочитать очередь Hub. Повтори проверку позже. Новые решения не отправлены; уже переданные в Buffer задания могут продолжать выполняться.'; }
     }
+    try { await telegram.sendMessage({ chatId: ownerId, text, replyMarkup: openButton({ video, planId: focus }) }); }
+    catch (_) { await state.set(`${namespace}:command:${id}`, 'unconfirmed'); }
     return true;
   }
   let busy = false;
@@ -101,12 +133,6 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
       if (!Number.isSafeInteger(after) || after < 0) throw new Error("INVALID_CURSOR");
       const data = await hub.call("events", { after });
       if (!Array.isArray(data.events) || data.events.length > 500) throw new Error("INVALID_EVENTS");
-      const wasDown = await state.get(`${namespace}:down`);
-      if(wasDown){
-        // Reserve recovery before sending; a lost Telegram ack never causes blind replay.
-        await state.del(`${namespace}:down`);
-        try{await telegram.sendMessage({chatId:ownerId,text:"Связь Astel Telegram с Hub восстановлена.",replyMarkup:openButton()});}catch(_){}
-      }
       let cursor = after;
       for (const event of data.events) {
         if (!Number.isSafeInteger(event.sequence) || event.sequence <= cursor || event.projectId !== hub.projectId) throw new Error("INVALID_EVENT_IDENTITY");
@@ -115,7 +141,7 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
           if (await state.set(key, JSON.stringify({ status: "reserved", planId: event.planId, state: event.state }), { NX: true })) {
             let outcome = "unconfirmed";
             try {
-              const message = await telegram.sendMessage({ chatId: ownerId, text: `Дистрибуция · ${String(event.brandId).slice(0,100)}\nСтатус: ${event.state}\nМатериал: ${String(event.contentId).slice(0,200)}\nВерсия: ${event.revision}\n\nОткрой приложение для полного материала и решения.`, replyMarkup: openButton() });
+              const message = await telegram.sendMessage({ chatId: ownerId, text: `Дистрибуция · ${String(event.brandId).slice(0,100)}\nСтатус: ${event.state}\nМатериал: ${String(event.contentId).slice(0,200)}\nВерсия: ${event.revision}\n\nОткрой приложение для полного материала и решения.`, replyMarkup: openButton({ video: String(event.contentId || '').startsWith('astel-video:'), planId: event.planId }) });
               outcome = message?.message_id ? "sent" : "unconfirmed";
             } catch (_) {}
             await state.set(key, JSON.stringify({ status: outcome, planId: event.planId, state: event.state }));
@@ -123,11 +149,10 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
         }
         cursor = event.sequence;await state.set(cursorKey, String(cursor));
       }
+      await health.healthy();
       return { checked: data.events.length, cursor };
     } catch (error) {
-      if(await state.set(`${namespace}:down`,"reserved",{NX:true})){
-        try{await telegram.sendMessage({chatId:ownerId,text:"Связь Astel Telegram с Hub недоступна. Новые согласования приостановлены; существующие задания в Buffer не отменены.",replyMarkup:openButton()});}catch(_){}
-      }
+      try { await health.failed(); } catch (_) {}
       throw error;
     } finally { busy = false; }
   }

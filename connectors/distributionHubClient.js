@@ -28,7 +28,12 @@ function createDistributionHubClient({ env = process.env, fetchImpl = globalThis
     if(!enabled()||projectId!=='copilot'||!['inbox','status','feedback'].includes(action))throw Error('VIDEO_ACTION_DENIED');
     const token=action==='feedback'?owner:reader;if(token.length<32)throw Error('VIDEO_OWNER_NOT_CONFIGURED');
     const response=await fetchImpl(`${origin}/api/video-workspace/${action}`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({...args,projectId}),redirect:'error',signal:AbortSignal.timeout(15000)});
-    if(!response.ok)throw Error('VIDEO_REQUEST_FAILED');return response.json();
+    if(!response.ok){
+      const error=Error('VIDEO_REQUEST_FAILED');
+      error.status=[400,403,404,409,429].includes(response.status)?response.status:503;
+      throw error;
+    }
+    return response.json();
   }
   return { call, video, enabled, projectId, approvalsEnabled: () => enabled() && owner.length >= 32 };
 }

@@ -75,5 +75,10 @@
     try{const metrics=await api('metrics');root.querySelector('#distribution-metrics').textContent=`В очереди: ${metrics.pending} · Ошибки: ${metrics.failed} · Требуют проверки: ${metrics.ambiguous} · Подтверждено: ${metrics.confirmedSuccess}`;}catch(_){}
   }
   window.renderDistribution=renderDistribution;
-  if(new URLSearchParams(location.search).get('distribution')==='1')renderDistribution();
+  const entry = new URLSearchParams(location.search);
+  if (entry.get('distribution') === '1') {
+    if (entry.get('video') === '1' && entry.get('distributionProject') !== 'subteam' && window.renderVideoWorkspace) {
+      const id = entry.get('planId'); window.renderVideoWorkspace({ planId: /^[a-f0-9]{64}$/.test(id || '') ? id : undefined });
+    } else renderDistribution();
+  }
 })();

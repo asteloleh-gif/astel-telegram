@@ -133,11 +133,23 @@ function createTelegramAdapter({
     return request("getMe", {});
   }
 
+  async function setMyCommands({ commands, scope }) {
+    if (scope?.type !== 'chat' || !/^[1-9]\d{0,15}$/.test(String(scope.chat_id)) || !Number.isSafeInteger(Number(scope.chat_id))) throw new Error('Owner chat scope required');
+    return request('setMyCommands', { commands, scope: { ...scope, chat_id: Number(scope.chat_id) } });
+  }
+
+  async function setChatMenuButton({ chatId, text, url }) {
+    if (!/^[1-9]\d{0,15}$/.test(String(chatId)) || !Number.isSafeInteger(Number(chatId))) throw new Error('Private owner chat required');
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) throw new Error('HTTPS Mini App required');
+    return request('setChatMenuButton', { chat_id: Number(chatId), menu_button: { type: 'web_app', text, web_app: { url: parsed.href } } });
+  }
+
   async function answerCallbackQuery({ callbackQueryId, text }) {
     return request("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
   }
 
-  return { normalizeUpdate, sendMessage, sendPhoto, setWebhook, getMe, answerCallbackQuery };
+  return { normalizeUpdate, sendMessage, sendPhoto, setWebhook, getMe, setMyCommands, setChatMenuButton, answerCallbackQuery };
 }
 
 module.exports = { createTelegramAdapter, TelegramPublishError };
