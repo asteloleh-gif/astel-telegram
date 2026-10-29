@@ -24,6 +24,12 @@ function createDistributionHubClient({ env = process.env, fetchImpl = globalThis
     if (!response.ok) throw new Error("DISTRIBUTION_REQUEST_FAILED");
     return response.json();
   }
-  return { call, enabled, projectId, approvalsEnabled: () => enabled() && owner.length >= 32 };
+  async function video(action,args={}){
+    if(!enabled()||projectId!=='copilot'||!['inbox','status','feedback'].includes(action))throw Error('VIDEO_ACTION_DENIED');
+    const token=action==='feedback'?owner:reader;if(token.length<32)throw Error('VIDEO_OWNER_NOT_CONFIGURED');
+    const response=await fetchImpl(`${origin}/api/video-workspace/${action}`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({...args,projectId}),redirect:'error',signal:AbortSignal.timeout(15000)});
+    if(!response.ok)throw Error('VIDEO_REQUEST_FAILED');return response.json();
+  }
+  return { call, video, enabled, projectId, approvalsEnabled: () => enabled() && owner.length >= 32 };
 }
 module.exports = { createDistributionHubClient };

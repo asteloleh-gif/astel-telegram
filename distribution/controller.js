@@ -30,7 +30,16 @@ function createDistributionController({ redis, stateStore, telegram, env = proce
       if (!active()) return res.status(503).json({ error: "DISTRIBUTION_DISABLED" });
       return webAppGuard(req, res, () => String(req.telegramMiniAppUser?.id) === ownerId ? next() : res.sendStatus(403));
     };
-    app.get(`${apiPrefix}/features`, guard, (_req, res) => res.json({youtubeRead:env.DISTRIBUTION_YOUTUBE_ENABLED === "true",youtubeAsapTeam:env.DISTRIBUTION_YOUTUBE_ASAP_TEAM_ENABLED === "true"}));
+    app.get(`${apiPrefix}/features`, guard, (_req, res) => res.json({...(hub.projectId==='copilot'&&env.VIDEO_WORKSPACE_ENABLED==='true'?{videoWorkspace:true}:{}),youtubeRead:env.DISTRIBUTION_YOUTUBE_ENABLED === "true",youtubeAsapTeam:env.DISTRIBUTION_YOUTUBE_ASAP_TEAM_ENABLED === "true"}));
+    app.post(`${apiPrefix}/video-workspace/:action`, guard, async(req,res)=>{
+      if(hub.projectId!=='copilot'||env.VIDEO_WORKSPACE_ENABLED!=='true'||!hub.video)return res.sendStatus(404);
+      const action=req.params.action,body=req.body;
+      if(!['inbox','status','feedback'].includes(action)||!body||typeof body!=='object'||Array.isArray(body))return res.sendStatus(400);
+      const allowed=action==='inbox'?[]:action==='status'?['planId']:['planId','digest','requestId','decision','note'];
+      if(Object.keys(body).some(k=>!allowed.includes(k))||(action!=='inbox'&&!/^[a-f0-9]{64}$/.test(body.planId||'')))return res.sendStatus(400);
+      if(action==='feedback'&&(!/^[a-f0-9]{64}$/.test(body.digest||'')||!['changes_requested','draft_accepted'].includes(body.decision)||typeof body.note!=='string'||body.note.length>2000))return res.sendStatus(400);
+      try{res.json(await hub.video(action,body));}catch(_){safeError(res);}
+    });
     app.get(`${apiPrefix}/youtube/:action`, guard, async (req, res) => {
       if(env.DISTRIBUTION_YOUTUBE_ENABLED !== "true")return res.sendStatus(404);
       const actions={account:"youtubeaccount",videos:"youtubevideos",analytics:"youtubeanalytics"};
