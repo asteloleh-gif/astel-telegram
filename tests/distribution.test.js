@@ -54,8 +54,8 @@ test('lost Telegram acknowledgement is recorded and never blindly replayed',asyn
 });
 test('Hub outage notifies once; recovery is separate; no provider operations',async()=>{
  let down=true;const f=fixture({client:{async call(){if(down)throw Error('secret upstream');return {events:[]};}}});
- await assert.rejects(()=>f.controller.poll());await assert.rejects(()=>f.controller.poll());assert.equal(f.sent.length,1);assert.ok(!f.sent[0].text.includes('secret'));
- down=false;await f.controller.poll();assert.equal(f.sent.length,2);assert.match(f.sent[1].text,/восстановлена/);
+ await assert.rejects(()=>f.controller.poll());await assert.rejects(()=>f.controller.poll());assert.equal(f.sent.length,0);await assert.rejects(()=>f.controller.poll());assert.equal(f.sent.length,1);assert.ok(!f.sent[0].text.includes('secret'));
+ down=false;await f.controller.poll();assert.equal(f.sent.length,1);await f.controller.poll();assert.equal(f.sent.length,2);assert.match(f.sent[1].text,/снова доступна/);
 });
 test('/distribution is owner-only, deterministic and deduplicated',async()=>{
  const f=fixture();const update=id=>({update_id:10,message:{message_id:1,text:'/distribution',from:{id},chat:{id,type:'private'}}});
@@ -120,4 +120,39 @@ test('video connector fixes project and endpoint and selects only reader or owne
  const calls=[];const reader='r'.repeat(40),owner='o'.repeat(40);const client=createDistributionHubClient({env:{DISTRIBUTION_HUB_ENABLED:'true',DISTRIBUTION_HUB_URL:'https://hub.test',DISTRIBUTION_HUB_READER_TOKEN:reader,DISTRIBUTION_HUB_OWNER_TOKEN:owner},fetchImpl:async(url,options)=>{calls.push([url,options]);return new Response('{}');}});
  await client.video('inbox',{});await client.video('feedback',{planId,digest});await assert.rejects(()=>client.video('schedule',{}));
  assert.equal(calls[0][0],'https://hub.test/api/video-workspace/inbox');assert.equal(calls[0][1].headers.authorization,'Bearer '+reader);assert.equal(calls[1][1].headers.authorization,'Bearer '+owner);assert.equal(JSON.parse(calls[1][1].body).projectId,'copilot');
+});
+
+
+test('/video and /canvas are owner-private navigation commands with no AI/provider operations', async () => {
+ const f=fixture({env:{VIDEO_WORKSPACE_ENABLED:'true'},client:{async video(action,args){f.calls.push(['video:'+action,args]);return {items:[{latest:true,planId,card:{title:'Склад',revision:1},state:'NEEDS_APPROVAL'}]};}}});
+ const update=(id,text,user=7,type='private')=>({update_id:id,message:{message_id:id,text,from:{id:user},chat:{id:user,type}}});
+ await f.controller.handle(update(80,'/video',99));await f.controller.handle(update(81,'/video',7,'group'));assert.equal(f.sent.length,0);
+ assert.equal(await f.controller.handle(update(82,'/video@astel_bot')),true);await f.controller.handle(update(82,'/video@astel_bot'));
+ assert.equal(f.sent.length,1);assert.match(f.sent[0].text,/Склад/);const url=new URL(f.sent[0].replyMarkup.inline_keyboard[0][0].web_app.url);assert.equal(url.searchParams.get('video'),'1');assert.equal(url.searchParams.get('planId'),planId);
+ await f.controller.handle(update(83,'/canvas'));assert.equal(f.sent.length,2);assert.deepEqual(f.calls.map(c=>c[0]),['video:inbox','metrics']);
+});
+test('disabled /video is consumed without invoking the paid chat fallback', async () => {
+ const f=fixture();assert.equal(await f.controller.handle({update_id:84,message:{message_id:84,text:'/video',from:{id:7},chat:{id:7,type:'private'}}}),true);
+ assert.equal(f.sent.length,1);assert.match(f.sent[0].text,/пока недоступна/);assert.equal(f.calls.length,0);
+});
+test('video feedback validates request IDs and nonempty correction before any Hub call', async t => {
+ const calls=[];const f=fixture({env:{VIDEO_WORKSPACE_ENABLED:'true'},client:{async video(action,args){calls.push([action,args]);return {};}}});const origin=await server(t,f);
+ const post=body=>fetch(origin+'/api/distribution/video-workspace/feedback',{method:'POST',headers:{'content-type':'application/json','x-telegram-init-data':signed()},body:JSON.stringify(body)});
+ const body={planId,digest,requestId:crypto.randomUUID(),decision:'changes_requested',note:'Tighten ending'};
+ assert.equal((await post({...body,requestId:'not-a-uuid'})).status,400);assert.equal((await post({...body,note:'  '})).status,400);assert.equal(calls.length,0);
+ assert.equal((await post(body)).status,200);assert.equal(calls.length,1);
+});
+test('video notification opens the exact plan rather than the generic queue', async () => {
+ const f=fixture({env:{VIDEO_WORKSPACE_ENABLED:'true'},client:{async call(action){if(action==='events')return {events:[{sequence:1,projectId:'copilot',planId,state:'NEEDS_APPROVAL',brandId:'ua',contentId:'astel-video:story:simulation',revision:1}]};}}});
+ await f.controller.poll();const url=new URL(f.sent[0].replyMarkup.inline_keyboard[0][0].web_app.url);assert.equal(url.searchParams.get('planId'),planId);assert.equal(url.searchParams.get('video'),'1');
+});
+
+test('video proxy preserves stale/rate-limit status without exposing upstream diagnostics',async t=>{
+ const f=fixture({env:{VIDEO_WORKSPACE_ENABLED:'true'},client:{async video(){const error=Error('private upstream detail');error.status=409;throw error;}}});const origin=await server(t,f);
+ const r=await fetch(origin+'/api/distribution/video-workspace/status',{method:'POST',headers:{'content-type':'application/json','x-telegram-init-data':signed()},body:JSON.stringify({planId})});
+ assert.equal(r.status,409);assert.deepEqual(await r.json(),{error:'VIDEO_REQUEST_REJECTED'});
+});
+test('video client retains a rejected version status and sends no owner credential on reads',async()=>{
+ const calls=[];const client=createDistributionHubClient({env:{DISTRIBUTION_HUB_ENABLED:'true',DISTRIBUTION_HUB_URL:'https://hub.test',DISTRIBUTION_HUB_READER_TOKEN:'r'.repeat(40),DISTRIBUTION_HUB_OWNER_TOKEN:'o'.repeat(40)},fetchImpl:async(url,options)=>{calls.push(options);return new Response('{"error":"private detail"}',{status:409});}});
+ await assert.rejects(()=>client.video('status',{planId}),error=>error.message==='VIDEO_REQUEST_FAILED'&&error.status===409);assert.equal(calls[0].headers.authorization,'Bearer '+'r'.repeat(40));
 });

@@ -39,3 +39,10 @@ test("systemSkill: omits Mini App button when URL is missing", async () => {
   const result = await skill.handle({ text: "/help" });
   assert.equal(result.replyMarkup, null);
 });
+
+
+test('video-enabled help offers direct navigation and handles a bot-suffixed command without AI',async()=>{
+ const skill=createSystemSkill({policy,miniAppUrl:'https://astel.example',videoWorkspaceEnabled:true});
+ assert.equal(skill.canHandle({text:'/help@astel_bot'}),true);const value=await skill.handle({text:'/help@astel_bot'});
+ assert.match(value.text,/\/video/);assert.match(value.text,/\/canvas/);assert.equal(value.replyMarkup.inline_keyboard.length,2);assert.match(value.replyMarkup.inline_keyboard[1][0].web_app.url,/video=1/);
+});

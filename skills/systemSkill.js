@@ -1,6 +1,8 @@
-function createSystemSkill({ policy, conversationStore, redisClient, miniAppUrl = "" } = {}) {
+const { miniAppUrl: buildMiniAppUrl } = require('../telegram/ownerNavigation');
+function createSystemSkill({ policy, conversationStore, redisClient, miniAppUrl = "", videoWorkspaceEnabled = false } = {}) {
+  const commandOf = event => String(event?.text || '').trim().split(/\s+/)[0].toLowerCase().replace(/@\w+$/, '');
   function canHandle(event) {
-    const command = String(event?.text || "").trim().split(/\s+/)[0].toLowerCase();
+    const command = commandOf(event);
     return ["/start", "/help", "/status", "/reset"].includes(command);
   }
 
@@ -18,7 +20,7 @@ function createSystemSkill({ policy, conversationStore, redisClient, miniAppUrl 
   }
 
   async function handle(event) {
-    const command = String(event.text || "").trim().split(/\s+/)[0].toLowerCase();
+    const command = commandOf(event);
 
     if (command === "/reset") {
       await conversationStore.clear(event);
@@ -41,6 +43,9 @@ function createSystemSkill({ policy, conversationStore, redisClient, miniAppUrl 
       };
     }
 
+    const replyMarkup = miniAppReplyMarkup();
+    const videoUrl = videoWorkspaceEnabled && buildMiniAppUrl(miniAppUrl, { video: true });
+    if (replyMarkup && videoUrl) replyMarkup.inline_keyboard.push([{ text: 'Видеочерновики и правки', web_app: { url: videoUrl } }]);
     return {
       text: [
         "Astel Assistant готов.",
@@ -50,11 +55,12 @@ function createSystemSkill({ policy, conversationStore, redisClient, miniAppUrl 
         "/research <запрос> — свежий веб-ресерч",
         "/leads <что искать> — публичные B2B лиды",
         "/crew <задача> — запустить всю AI-команду",
+        ...(videoWorkspaceEnabled ? ['/video — видеочерновики и правки', '/canvas — очередь Canvas', '/distribution — статусы доставки'] : []),
         "/status — статус",
         "/reset — очистить память диалога",
         "/help — помощь",
       ].join("\n"),
-      replyMarkup: miniAppReplyMarkup(),
+      replyMarkup,
       rememberAssistant: false,
     };
   }

@@ -32,6 +32,7 @@ const { createHyperCrewSkill } = require("./skills/hyperCrewSkill");
 const { isHyperCrewGroupChat, handleHyperCrewGroupChat } = require("./skills/hyperCrewGroupChat");
 const { createManagedCrewBotStore } = require("./storage/managedCrewBotStore");
 const { createManagedCrewManager } = require("./telegram/managedCrewManager");
+const { configureOwnerNavigation } = require('./telegram/ownerNavigation');
 
 function createApp({
   telegramAdapter,
@@ -83,7 +84,7 @@ function createApp({
     timeoutMs: Number(env.HYPER_CREW_TIMEOUT_MS || 180000),
   });
   const skills = skillRegistry || createSkillRegistry([
-    createSystemSkill({ policy, conversationStore: memory, redisClient: redis, miniAppUrl: env.MINI_APP_URL || env.PUBLIC_BASE_URL || "" }),
+    createSystemSkill({ policy, conversationStore: memory, redisClient: redis, miniAppUrl: env.MINI_APP_URL || env.PUBLIC_BASE_URL || "", videoWorkspaceEnabled: env.VIDEO_WORKSPACE_ENABLED === 'true' }),
     createHyperCrewSkill({ client: hyperCrew, miniAppUrl: env.MINI_APP_URL || env.PUBLIC_BASE_URL || "", logger: log }),
     createResearchSkill({ provider, conversationStore: memory, logger: log, policy }),
     createAIChatSkill({ aiEngine: engine, conversationStore: memory, logger: log, policy }),
@@ -415,6 +416,14 @@ async function start() {
         const webhookUrl = `${publicBaseUrl}/telegram/webhook`;
         await telegramAdapter.setWebhook({ url: webhookUrl, secretToken: process.env.TELEGRAM_WEBHOOK_SECRET || null });
         logger.info({ traceId: null, reasonCode: "TELEGRAM_WEBHOOK_SET", conversationId: null, messageId: null, userId: null, extra: { webhookUrl } });
+
+        try {
+          const navigation = await configureOwnerNavigation({ telegram: telegramAdapter, env: process.env });
+          if (navigation.enabled) logger.info({ reasonCode: 'TELEGRAM_OWNER_NAVIGATION_READY', extra: navigation });
+        } catch (_) {
+          // Menu setup is idempotent and independent of webhook operation.
+          logger.error({ reasonCode: 'TELEGRAM_OWNER_NAVIGATION_FAILED' });
+        }
 
         if (process.env.MANAGED_CREW_AUTO_SETUP_PROMPT === "true" && process.env.TELEGRAM_OWNER_ID) {
           try {

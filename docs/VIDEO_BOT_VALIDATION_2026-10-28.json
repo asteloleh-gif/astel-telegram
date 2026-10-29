@@ -1,0 +1,36 @@
+{
+  "tests": {
+    "passed": 119,
+    "failed": 0
+  },
+  "browser": {
+    "empty_note_blocked": true,
+    "pending_note_survives_reload": true,
+    "failed_card_does_not_break_other_cards": true,
+    "mobile_viewport_width": 390,
+    "mobile_scroll_width": 390,
+    "physical_telegram_session_tested": false,
+    "synthetic_fixture": true
+  },
+  "feedback": {
+    "lost_before_save": {
+      "attempt_count": 2,
+      "unique_request_ids": 1,
+      "saved_reviews": 1,
+      "approval_calls": 0,
+      "telegram_messages": 0,
+      "model_calls": 0
+    },
+    "lost_after_save": {
+      "attempt_count": 1,
+      "unique_request_ids": 1,
+      "saved_reviews": 1,
+      "approval_calls": 0,
+      "telegram_messages": 0,
+      "model_calls": 0
+    }
+  },
+  "production_deployed": false,
+  "paid_planner_changed": false,
+  "publishing_changed": false
+}

@@ -2,7 +2,11 @@
 
 Private owner-only Telegram client for **Astel Assistant**.
 
-## Current capabilities — v0.5.0
+## Video workflow update (candidate)
+
+The existing owner bot gains `/video`, `/canvas`, an owner-scoped persistent Canvas menu and direct links from video notifications to the exact card. Video feedback keeps the same request ID across a lost reply/reload; stale versions are rejected and one broken card does not hide the rest. Single failed Hub polls no longer generate an outage/recovery message pair. See [release and rollback](docs/VIDEO_BOT_COMPLETION.md) and [validation](docs/VIDEO_BOT_VALIDATION_2026-10-28.json). Production activation is a separate confirmed rollout; the paid planner and publishing settings are unchanged.
+
+## Current capabilities — v0.6.0
 
 - Telegram Bot API webhook client
 - owner-only access control
